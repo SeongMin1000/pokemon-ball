@@ -9,6 +9,9 @@
 # Edge Impulse datasets (large, not version-controlled)
 dataset/
 
+# Edge Impulse model exports (regenerate from Studio)
+*inferencing.zip
+
 # Arduino build output
 build/
 *.bin

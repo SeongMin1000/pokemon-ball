@@ -33,7 +33,7 @@
 // While it stays commented, gesture.cpp uses a built-in stub that returns
 // mock labels so the full pipeline can be exercised without the model.
 //
-// #define USE_EDGE_IMPULSE
+#define USE_EDGE_IMPULSE
 
 // ========================================================================
 // Hardware pins  (XIAO ESP32S3 + Seeed Round Display + GY-BNO055)

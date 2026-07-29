@@ -22,7 +22,7 @@
 #include <utility/imumaths.h>
 
 #ifdef USE_EDGE_IMPULSE
-#include "gesture_inferencing.h"
+#include "pokemon_gesture_inferencing.h"
 #endif
 
 static Adafruit_BNO055 bno = Adafruit_BNO055(55, BNO055_ADDR, &Wire);

@@ -20,6 +20,7 @@ static unsigned long lastReconnect = 0;
 // -----------------------------------------------------------------------
 static void connectWifi() {
     WiFi.mode(WIFI_STA);
+    WiFi.setSleep(false);
     WiFi.setTxPower(WIFI_POWER_15dBm);   // BNO055 brownout workaround
     WiFi.begin(WIFI_SSID, WIFI_PASS);
     Serial.print(F("[MQTT] WiFi"));
