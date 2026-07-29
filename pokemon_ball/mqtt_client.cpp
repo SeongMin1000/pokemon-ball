@@ -24,11 +24,16 @@ static void connectWifi() {
     WiFi.setTxPower(WIFI_POWER_15dBm);   // BNO055 brownout workaround
     WiFi.begin(WIFI_SSID, WIFI_PASS);
     Serial.print(F("[MQTT] WiFi"));
-    while (WiFi.status() != WL_CONNECTED) {
+    uint32_t t0 = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) {
         delay(500);
         Serial.print(F("."));
     }
-    Serial.printf(" %s\n", WiFi.localIP().toString().c_str());
+    if (WiFi.status() == WL_CONNECTED) {
+        Serial.printf(" %s\n", WiFi.localIP().toString().c_str());
+    } else {
+        Serial.println(F(" TIMEOUT — continuing without MQTT"));
+    }
 }
 
 static bool mqttConnect() {

@@ -140,8 +140,9 @@ void gameLoop() {
             displayPokeball(false);
             enterState(State::IDLE);
         }
-        // Allow an early tap to skip back to idle immediately.
-        if (touchTapped()) {
+        // Allow an early tap to skip — but only after 3s to prevent
+        // touch noise from cutting the display short.
+        if (now - stateEnterMs >= 3000 && touchTapped()) {
             displayPokeball(false);
             enterState(State::IDLE);
         }
