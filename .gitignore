@@ -1,0 +1,26 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# opencode agent skills (development tooling, not project code)
+.agents/
+
+# Edge Impulse datasets (large, not version-controlled)
+dataset/
+
+# Arduino build output
+build/
+*.bin
+*.elf
+*.map
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+Thumbs.db
+.DS_Store

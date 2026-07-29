@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pokemon Ball Dashboard</title>
+<style>
+:root{
+  --bg:#1a1a2e; --card:#16213e; --accent:#e94560; --gold:#f5c518;
+  --text:#eee; --muted:#889; --green:#4ecca3; --purple:#9b59b6;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',sans-serif;background:var(--bg);color:var(--text);
+  min-height:100vh;padding:16px}
+h1{text-align:center;color:var(--gold);margin-bottom:4px;font-size:1.5rem}
+.subtitle{text-align:center;color:var(--muted);margin-bottom:16px;font-size:.85rem}
+.grid{display:grid;gap:14px;max-width:900px;margin:0 auto}
+.card{background:var(--card);border-radius:12px;padding:16px}
+.card h2{font-size:1rem;color:var(--gold);margin-bottom:10px}
+.row{display:flex;justify-content:space-between;align-items:center;padding:4px 0}
+.value{font-size:1.3rem;font-weight:bold}
+.big{font-size:1.8rem}
+
+/* Connection bar */
+.conn{display:flex;align-items:center;gap:6px;justify-content:center;
+  font-size:.8rem;color:var(--muted);margin-bottom:10px}
+.dot{width:10px;height:10px;border-radius:50%;background:#e74c3c;transition:.3s}
+.dot.on{background:var(--green)}
+
+/* Current pokemon / gesture */
+.current{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.current .value{text-align:center}
+
+/* Pokedex grid */
+.dex{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px}
+.dex-item{background:#0f3460;border-radius:10px;padding:12px;text-align:center;
+  transition:.3s;opacity:.35}
+.dex-item.caught{opacity:1;box-shadow:0 0 8px var(--green)}
+.dex-item.hidden-caught{border:2px solid var(--purple);opacity:1}
+.dex-item.hidden{border:2px dashed var(--purple);opacity:.5}
+.dex-icon{font-size:2rem;margin-bottom:4px}
+.dex-name{font-size:.8rem;font-weight:bold}
+.dex-status{font-size:.7rem;color:var(--muted);margin-top:2px}
+.dex-item.caught .dex-status{color:var(--green)}
+.dex-item.hidden-caught .dex-status{color:var(--purple)}
+
+/* Probability table */
+.prob-section{margin-bottom:12px}
+.prob-section h3{font-size:.85rem;color:var(--accent);margin-bottom:6px}
+.bar-row{display:flex;align-items:center;gap:8px;margin:3px 0;font-size:.8rem}
+.bar-label{width:100px;text-align:right}
+.bar-track{flex:1;height:18px;background:#0f3460;border-radius:4px;overflow:hidden}
+.bar-fill{height:100%;transition:width .4s}
+.bar-fill.normal{background:var(--green)}
+.bar-fill.hidden{background:var(--purple)}
+.bar-val{width:50px;font-family:monospace}
+
+/* Config input */
+.cfg-bar{display:flex;gap:8px;justify-content:center;margin-bottom:12px;flex-wrap:wrap}
+.cfg-bar input{background:#0f3460;border:1px solid var(--muted);color:var(--text);
+  border-radius:6px;padding:6px 10px;font-size:.8rem}
+.cfg-bar button{background:var(--accent);color:#fff;border:none;border-radius:6px;
+  padding:6px 16px;cursor:pointer;font-size:.8rem}
+</style>
+</head>
+<body>
+<h1>Pokemon Ball Dashboard</h1>
+<div class="subtitle">MQTT real-time monitor</div>
+
+<!-- Broker config -->
+<div class="cfg-bar">
+  <input id="host"  placeholder="Broker host" value="192.168.0.30">
+  <input id="wsport" placeholder="WS port" value="9001" style="width:70px">
+  <button onclick="doConnect()">Connect</button>
+</div>
+
+<div class="conn">
+  <span class="dot" id="dot"></span>
+  <span id="connText">Disconnected</span>
+</div>
+
+<div class="grid">
+
+  <!-- Current result -->
+  <div class="card">
+    <h2>Current Result</h2>
+    <div class="current">
+      <div>
+        <div class="row"><span>Gesture</span></div>
+        <div class="value big" id="curGesture" style="text-align:center;color:var(--accent)">—</div>
+      </div>
+      <div>
+        <div class="row"><span>Pokemon</span></div>
+        <div class="value big" id="curPokemon" style="text-align:center;color:var(--gold)">—</div>
+      </div>
+    </div>
+    <div id="hiddenTag" style="text-align:center;margin-top:6px;color:var(--purple);font-weight:bold;display:none">★ HIDDEN CHARACTER ★</div>
+  </div>
+
+  <!-- Probability table -->
+  <div class="card">
+    <h2>Appearance Probability by Gesture</h2>
+    <div id="probArea"><span style="color:var(--muted)">Waiting for config...</span></div>
+  </div>
+
+  <!-- Pokedex -->
+  <div class="card">
+    <h2>Pokedex</h2>
+    <div class="dex" id="dex"></div>
+  </div>
+
+</div>
+
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<script>
+let client = null;
+let config = null;       // {mappings:[{gesture,pokemon}], hidden, hiddenProb}
+let caught = new Set();  // caught pokemon names (session + localStorage)
+
+// ---- localStorage persistence ----
+function loadCaught(){
+  try{ const s = localStorage.getItem('pokemon_caught');
+    if(s) caught = new Set(JSON.parse(s));
+  }catch(e){}
+}
+function saveCaught(){
+  localStorage.setItem('pokemon_caught', JSON.stringify([...caught]));
+}
+
+// ---- Rendering ----
+function renderProb(){
+  if(!config) return;
+  const area = document.getElementById('probArea');
+  area.innerHTML = '';
+  const hp = config.hiddenProb || 2;
+  const np = 100 - hp;
+  config.mappings.forEach(m=>{
+    const sec = document.createElement('div');
+    sec.className = 'prob-section';
+    sec.innerHTML = `<h3>${m.gesture}</h3>`
+      + `<div class="bar-row"><div class="bar-label">${m.pokemon}</div>`
+      + `<div class="bar-track"><div class="bar-fill normal" style="width:${np}%"></div></div>`
+      + `<div class="bar-val">${np}%</div></div>`
+      + `<div class="bar-row"><div class="bar-label">${config.hidden}</div>`
+      + `<div class="bar-track"><div class="bar-fill hidden" style="width:${hp}%"></div></div>`
+      + `<div class="bar-val">${hp}%</div></div>`;
+    area.appendChild(sec);
+  });
+}
+
+function renderDex(){
+  if(!config) return;
+  const dex = document.getElementById('dex');
+  dex.innerHTML = '';
+  // All pokemon from the table
+  config.mappings.forEach(m=>{
+    const isCaught = caught.has(m.pokemon);
+    const el = document.createElement('div');
+    el.className = 'dex-item' + (isCaught ? ' caught' : '');
+    el.innerHTML = `<div class="dex-icon">${isCaught ? '🔵' : '⚪'}</div>`
+      + `<div class="dex-name">${m.pokemon}</div>`
+      + `<div class="dex-status">${isCaught ? 'Caught' : 'Not caught'}</div>`;
+    dex.appendChild(el);
+  });
+  // Hidden character
+  const hCaught = caught.has(config.hidden);
+  const el = document.createElement('div');
+  el.className = 'dex-item hidden' + (hCaught ? ' hidden-caught' : '');
+  el.innerHTML = `<div class="dex-icon">${hCaught ? '🌟' : '❓'}</div>`
+    + `<div class="dex-name">${config.hidden}</div>`
+    + `<div class="dex-status">${hCaught ? 'FOUND!' : 'Hidden ???'}</div>`;
+  dex.appendChild(el);
+}
+
+function setConnected(on){
+  document.getElementById('dot').classList.toggle('on', on);
+  document.getElementById('connText').textContent = on ? 'Connected' : 'Disconnected';
+}
+
+// ---- MQTT ----
+function doConnect(){
+  if(client){ client.end(); client = null; }
+  const host = document.getElementById('host').value.trim();
+  const port = parseInt(document.getElementById('wsport').value) || 9001;
+  const url = `ws://${host}:${port}`;
+  console.log('Connecting to', url);
+  client = mqtt.connect(url, {clientId:'pokemon_web_' + Math.random().toString(16).slice(2,8)});
+
+  client.on('connect', ()=>{
+    setConnected(true);
+    client.subscribe(['pokemon/config','pokemon/gesture','pokemon/result']);
+    console.log('subscribed');
+  });
+  client.on('close', ()=> setConnected(false));
+  client.on('error', (e)=> console.error('MQTT error', e));
+
+  client.on('message', (topic, msg)=>{
+    const str = msg.toString();
+    let d;
+    try{ d = JSON.parse(str); }catch(e){ return; }
+
+    if(topic === 'pokemon/config'){
+      config = d;
+      renderProb();
+      renderDex();
+      console.log('config received', d);
+    }
+    else if(topic === 'pokemon/gesture'){
+      document.getElementById('curGesture').textContent = d.gesture || '—';
+    }
+    else if(topic === 'pokemon/result'){
+      document.getElementById('curGesture').textContent = d.gesture || '—';
+      document.getElementById('curPokemon').textContent = d.pokemon || '—';
+      document.getElementById('hiddenTag').style.display = d.hidden ? 'block' : 'none';
+
+      // Add to pokedex
+      if(d.pokemon){
+        caught.add(d.pokemon);
+        saveCaught();
+        renderDex();
+      }
+    }
+  });
+}
+
+// ---- Init ----
+loadCaught();
+// Auto-connect on load
+window.addEventListener('load', ()=> doConnect());
+</script>
+</body>
+</html>
