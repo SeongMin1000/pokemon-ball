@@ -1,10 +1,5 @@
 /*
  * mqtt_client.cpp — MQTT publish module implementation.
- *
- * Reuses the PubSubClient + WiFi STA pattern from esp32_2/SensorMqtt.
- * The reconnect loop is non-blocking-friendly: it attempts one connect,
- * and if it fails returns immediately so the main loop can keep running
- * (display, touch, etc.) instead of stalling.
  */
 #include "mqtt_client.h"
 #include "config.h"
@@ -16,12 +11,10 @@ static PubSubClient  client(espClient);
 static unsigned long lastReconnect = 0;
 
 // -----------------------------------------------------------------------
-// Internal
-// -----------------------------------------------------------------------
 static void connectWifi() {
     WiFi.mode(WIFI_STA);
     WiFi.setSleep(false);
-    WiFi.setTxPower(WIFI_POWER_15dBm);   // BNO055 brownout workaround
+    WiFi.setTxPower(WIFI_POWER_15dBm);
     WiFi.begin(WIFI_SSID, WIFI_PASS);
     Serial.print(F("[MQTT] WiFi"));
     uint32_t t0 = millis();
@@ -40,7 +33,7 @@ static bool mqttConnect() {
     Serial.print(F("[MQTT] connecting... "));
     if (client.connect(MQTT_CLIENT_ID)) {
         Serial.println(F("connected"));
-        mqttPublishConfig();   // send retained config on every (re)connect
+        mqttPublishConfig();
         return true;
     }
     Serial.printf("failed rc=%d\n", client.state());
@@ -48,23 +41,17 @@ static bool mqttConnect() {
 }
 
 // -----------------------------------------------------------------------
-// Public API
-// -----------------------------------------------------------------------
-
 bool mqttBegin() {
     connectWifi();
-
     client.setServer(MQTT_HOST, MQTT_PORT);
-    client.setBufferSize(1024);  // ensure room for the config JSON
+    client.setBufferSize(1024);
     client.setKeepAlive(30);
-
     mqttConnect();
     return true;
 }
 
 void mqttLoop() {
     if (!client.connected()) {
-        // Throttle reconnection attempts to every 5 s.
         if (millis() - lastReconnect >= 5000) {
             lastReconnect = millis();
             mqttConnect();
@@ -73,17 +60,10 @@ void mqttLoop() {
     client.loop();
 }
 
-bool mqttConnected() {
-    return client.connected();
-}
+bool mqttConnected() { return client.connected(); }
 
 // -----------------------------------------------------------------------
-// JSON builders
-// -----------------------------------------------------------------------
-
 void mqttPublishConfig() {
-    // Build: {"hidden":"Sanjini","hiddenProb":2,"mappings":[
-    //           {"gesture":"GESTURE_A","pokemon":"Pokemon_A"}, ... ]}
     String json = "{\"hidden\":\"";
     json += HIDDEN_NAME;
     json += "\",\"hiddenProb\":";
@@ -98,8 +78,6 @@ void mqttPublishConfig() {
         json += "\"}";
     }
     json += "]}";
-
-    // retained = true so a web page that connects later immediately gets it
     client.publish(TOPIC_CONFIG, json.c_str(), true);
     Serial.printf("[MQTT] config (%d bytes)\n", (int)json.length());
 }
@@ -112,34 +90,48 @@ void mqttPublishGesture(const char* gestureLabel) {
     Serial.printf("[MQTT] gesture: %s\n", gestureLabel ? gestureLabel : "null");
 }
 
-void mqttPublishResult(const char* gestureLabel, const char* pokemonName,
-                       bool hidden) {
-    String json = "{\"gesture\":\"";
+void mqttPublishPredict(const char* const* labels, const float* scores, int count) {
+    // {"type":"predict","probabilities":{"LEFT":72,"RIGHT":15,...},"topGesture":"LEFT"}
+    float bestVal = -1;
+    const char* bestLabel = "";
+    String json = "{\"type\":\"predict\",\"probabilities\":{";
+    bool first = true;
+    for (int i = 0; i < count; i++) {
+        if (!labels[i]) continue;
+        // Skip idle labels
+        bool isIdle = false;
+        for (int j = 0; j < IDLE_LABEL_COUNT; j++) {
+            if (strcmp(labels[i], IDLE_LABELS[j]) == 0) { isIdle = true; break; }
+        }
+        if (isIdle) continue;
+
+        int pct = (int)(scores[i] * 100 + 0.5f);
+        if (!first) json += ",";
+        first = false;
+        // Uppercase label
+        String ul = String(labels[i]);
+        ul.toUpperCase();
+        json += "\"" + ul + "\":" + String(pct);
+        if (scores[i] > bestVal) { bestVal = scores[i]; bestLabel = labels[i]; }
+    }
+    json += "},\"topGesture\":\"";
+    String tul = String(bestLabel);
+    tul.toUpperCase();
+    json += tul + "\"}";
+    client.publish(TOPIC_PREDICT, json.c_str());
+}
+
+void mqttPublishCapture(const char* gestureLabel, const char* pokemonName, bool hidden) {
+    String json = "{\"type\":\"capture\",\"gesture\":\"";
     json += gestureLabel ? gestureLabel : "";
     json += "\",\"pokemon\":\"";
     json += pokemonName ? pokemonName : "";
     json += "\",\"hidden\":";
     json += hidden ? "true" : "false";
     json += "}";
-
-    // retained = true so the "latest result" survives a page reload
-    client.publish(TOPIC_RESULT, json.c_str(), true);
-    Serial.printf("[MQTT] result: %s → %s (hidden=%s)\n",
+    client.publish(TOPIC_CAPTURE, json.c_str(), true);
+    Serial.printf("[MQTT] capture: %s → %s (hidden=%s)\n",
                   gestureLabel ? gestureLabel : "?",
                   pokemonName ? pokemonName : "?",
                   hidden ? "yes" : "no");
-}
-
-void mqttPublishScores(const char* const* labels, const float* scores,
-                       int count) {
-    String json = "{";
-    for (int i = 0; i < count; i++) {
-        if (i > 0) json += ",";
-        json += "\"";
-        json += labels[i] ? labels[i] : "?";
-        json += "\":";
-        json += String(scores[i], 4);
-    }
-    json += "}";
-    client.publish("pokemon/scores", json.c_str());
 }

@@ -12,11 +12,9 @@ dataset/
 # Edge Impulse model exports (regenerate from Studio)
 *inferencing.zip
 
-# Arduino build output
-build/
-*.bin
-*.elf
-*.map
+# Root-level user images (not part of repo)
+/Pokemon-Battle-meme-12hl1s.jpg
+/ChatGPT Image*.png
 
 # IDE / editor
 .vscode/
@@ -27,3 +25,9 @@ build/
 # OS
 Thumbs.db
 .DS_Store
+
+# Arduino build output
+build/
+*.bin
+*.elf
+*.map

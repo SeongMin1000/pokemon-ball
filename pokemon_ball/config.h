@@ -74,8 +74,9 @@
 #define MQTT_CLIENT_ID "pokemon_ball"
 
 #define TOPIC_CONFIG   "pokemon/config"
+#define TOPIC_PREDICT  "pokemon/predict"
 #define TOPIC_GESTURE  "pokemon/gesture"
-#define TOPIC_RESULT   "pokemon/result"
+#define TOPIC_CAPTURE  "pokemon/capture"
 
 // ========================================================================
 // Shake / inference tuning

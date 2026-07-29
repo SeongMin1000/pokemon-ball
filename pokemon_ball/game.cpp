@@ -32,7 +32,8 @@ static unsigned long lastScorePub  = 0;
 static GestureResult pendingGesture;
 
 #define SCORE_PUB_MS 250   // publish scores every 250 ms
-#define SENSING_TIMEOUT_MS 3000   // give up if no valid gesture in 3 s
+#define MIN_SENSING_MS 1500 // minimum sensing time (let window fill + scores stabilize)
+#define SENSING_TIMEOUT_MS 4000   // give up if no valid gesture in 4 s
 
 // -----------------------------------------------------------------------
 // Helpers
@@ -61,7 +62,7 @@ static void publishScores() {
     int n = gestureGetScores(scores, MAX_LABELS);
     const char* labels[MAX_LABELS];
     for (int i = 0; i < n; i++) labels[i] = gestureGetLabel(i);
-    mqttPublishScores(labels, scores, n);
+    mqttPublishPredict(labels, scores, n);
 }
 
 static void reveal() {
@@ -69,7 +70,7 @@ static void reveal() {
 
     if (confirmedHidden) {
         displayHidden(HIDDEN_NAME, HIDDEN_IMAGE, HIDDEN_IMAGE_SIZE);
-        mqttPublishResult(pendingGesture.label, HIDDEN_NAME, true);
+        mqttPublishCapture(pendingGesture.label, HIDDEN_NAME, true);
         Serial.printf("[GAME] HIDDEN! %s appears!\n", HIDDEN_NAME);
     } else {
         int idx = findGestureIndex(pendingGesture.label);
@@ -77,7 +78,7 @@ static void reveal() {
         const PokemonEntry& pe = POKEMON_TABLE[idx];
         displayPokemon(pe.pokemonName, pe.jpgImage, pe.jpgSize,
                        pe.placeholderColor);
-        mqttPublishResult(pe.gestureLabel, pe.pokemonName, false);
+        mqttPublishCapture(pe.gestureLabel, pe.pokemonName, false);
         Serial.printf("[GAME] %s → %s\n", pe.gestureLabel, pe.pokemonName);
     }
 }
@@ -121,14 +122,19 @@ void gameLoop() {
 
     // -------------------------------------------------- SENSING
     case State::SENSING: {
-        GestureResult gr = gestureGetResult();
-        if (gr.valid) {
-            pendingGesture = gr;
-            mqttPublishGesture(gr.label);
-            displayPokeball(true);
-            enterState(State::GESTURE_READY);
-        } else if (now - stateEnterMs >= SENSING_TIMEOUT_MS) {
-            // No valid gesture within 3 s → back to idle
+        // Require minimum sensing time so the rolling window fills with
+        // shake data and the web dashboard shows real-time score changes.
+        if (now - stateEnterMs >= MIN_SENSING_MS) {
+            GestureResult gr = gestureGetResult();
+            if (gr.valid) {
+                pendingGesture = gr;
+                mqttPublishGesture(gr.label);
+                displayPokeball(true);
+                enterState(State::GESTURE_READY);
+            }
+        }
+        if (now - stateEnterMs >= SENSING_TIMEOUT_MS) {
+            // No valid gesture within timeout → back to idle
             displayPokeball(false);
             enterState(State::IDLE);
         }
