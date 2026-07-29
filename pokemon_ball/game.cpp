@@ -1,14 +1,13 @@
 /*
- * game.cpp — Central state machine that wires the modules together.
+ * game.cpp — Central state machine.
  *
- * Uses continuous rolling-window inference (gesturePoll) so the web
- * dashboard gets real-time score updates during sensing.
+ * Flow:
+ *   IDLE     → pokeball, continuous inference + score publishing, poll for shake
+ *   SENSING  → pokeball "TOUCH!", continuous inference + score publishing,
+ *              wait for touch (no timeout — keep sensing until user taps)
+ *   REVEALED → pokemon (or Sanjini), auto-return to IDLE after 5 s
  *
- * States:
- *   IDLE          → pokeball, continuous inference + score publishing
- *   SENSING       → "Sensing..." shown, wait for valid classification
- *   GESTURE_READY → pokeball "TOUCH!", wait for tap
- *   REVEALED      → pokemon (or Sanjini), auto-return to IDLE
+ * On touch: grab current best non-idle gesture → reveal pokemon.
  */
 #include "game.h"
 #include "config.h"
@@ -20,7 +19,6 @@
 enum class State {
     IDLE,
     SENSING,
-    GESTURE_READY,
     REVEALED,
 };
 
@@ -31,9 +29,7 @@ static unsigned long lastScorePub  = 0;
 
 static GestureResult pendingGesture;
 
-#define SCORE_PUB_MS 250   // publish scores every 250 ms
-#define MIN_SENSING_MS 1500 // minimum sensing time (let window fill + scores stabilize)
-#define SENSING_TIMEOUT_MS 4000   // give up if no valid gesture in 4 s
+#define SCORE_PUB_MS 250
 
 // -----------------------------------------------------------------------
 // Helpers
@@ -53,6 +49,13 @@ static int findGestureIndex(const char* label) {
     return -1;
 }
 
+static bool isIdleLabel(const char* label) {
+    if (!label) return true;
+    for (int j = 0; j < IDLE_LABEL_COUNT; j++)
+        if (strcmp(label, IDLE_LABELS[j]) == 0) return true;
+    return false;
+}
+
 static bool rollHidden() {
     return (random(1, 101) <= HIDDEN_PROBABILITY);
 }
@@ -65,15 +68,37 @@ static void publishScores() {
     mqttPublishPredict(labels, scores, n);
 }
 
+// Find the best non-idle label from the latest scores.
+static const char* getBestNonIdleLabel() {
+    float scores[MAX_LABELS];
+    int n = gestureGetScores(scores, MAX_LABELS);
+    float best = -1.0f;
+    const char* bestLabel = nullptr;
+    for (int i = 0; i < n; i++) {
+        const char* lbl = gestureGetLabel(i);
+        if (isIdleLabel(lbl)) continue;
+        if (scores[i] > best) { best = scores[i]; bestLabel = lbl; }
+    }
+    return bestLabel;
+}
+
 static void reveal() {
+    // Determine which gesture to use
+    const char* label = pendingGesture.label;
+    if (!label || isIdleLabel(label)) {
+        label = getBestNonIdleLabel();
+    }
+    if (!label) label = POKEMON_TABLE[0].gestureLabel;
+    pendingGesture.label = label;
+
     bool confirmedHidden = rollHidden();
 
     if (confirmedHidden) {
         displayHidden(HIDDEN_NAME, HIDDEN_IMAGE, HIDDEN_IMAGE_SIZE);
-        mqttPublishCapture(pendingGesture.label, HIDDEN_NAME, true);
+        mqttPublishCapture(label, HIDDEN_NAME, true);
         Serial.printf("[GAME] HIDDEN! %s appears!\n", HIDDEN_NAME);
     } else {
-        int idx = findGestureIndex(pendingGesture.label);
+        int idx = findGestureIndex(label);
         if (idx < 0) idx = 0;
         const PokemonEntry& pe = POKEMON_TABLE[idx];
         displayPokemon(pe.pokemonName, pe.jpgImage, pe.jpgSize,
@@ -93,12 +118,10 @@ void gameInit() {
 }
 
 void gameLoop() {
-    // Continuous sampling + inference (must be called every iteration)
     gesturePoll();
-
     unsigned long now = millis();
 
-    // Publish real-time scores in IDLE and SENSING states
+    // Publish real-time scores in IDLE and SENSING
     if ((state == State::IDLE || state == State::SENSING) &&
         now - lastScorePub >= SCORE_PUB_MS) {
         lastScorePub = now;
@@ -112,8 +135,8 @@ void gameLoop() {
         if (now - lastShakePoll >= SHAKE_CHECK_MS) {
             lastShakePoll = now;
             if (gesturePollShake()) {
-                Serial.println(F("[GAME] shake detected — sensing..."));
-                displayMessage("Sensing...", nullptr);
+                Serial.println(F("[GAME] shake! sensing + waiting touch..."));
+                displayPokeball(true);   // "TOUCH!" hint
                 enterState(State::SENSING);
             }
         }
@@ -121,30 +144,12 @@ void gameLoop() {
     }
 
     // -------------------------------------------------- SENSING
+    // Keep sensing + publishing scores until touch.
+    // No timeout — user can shake as long as they want.
     case State::SENSING: {
-        // Require minimum sensing time so the rolling window fills with
-        // shake data and the web dashboard shows real-time score changes.
-        if (now - stateEnterMs >= MIN_SENSING_MS) {
-            GestureResult gr = gestureGetResult();
-            if (gr.valid) {
-                pendingGesture = gr;
-                mqttPublishGesture(gr.label);
-                displayPokeball(true);
-                enterState(State::GESTURE_READY);
-            }
-        }
-        if (now - stateEnterMs >= SENSING_TIMEOUT_MS) {
-            // No valid gesture within timeout → back to idle
-            displayPokeball(false);
-            enterState(State::IDLE);
-        }
-        break;
-    }
-
-    // -------------------------------------------------- GESTURE_READY
-    case State::GESTURE_READY: {
         if (touchTapped()) {
-            Serial.println(F("[GAME] touch! confirming..."));
+            Serial.println(F("[GAME] touch! revealing..."));
+            pendingGesture = gestureGetResult();
             reveal();
             enterState(State::REVEALED);
         }

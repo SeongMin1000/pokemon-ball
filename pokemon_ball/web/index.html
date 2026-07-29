@@ -29,9 +29,9 @@ body{font-family:'Segoe UI',sans-serif;background:var(--bg);color:var(--text);
 .cfg-bar button{background:var(--accent);color:#fff;border:none;border-radius:4px;
   padding:3px 10px;cursor:pointer;font-size:.72rem;font-weight:bold}
 
-/* Battle area — GBA style */
+/* Battle area — GBA style with image background */
 .battle{position:relative;width:100%;max-width:640px;aspect-ratio:4/3;
-  background:linear-gradient(180deg,#7ba66f 0%,#6b8e5a 60%,#5a7a4a 100%);
+  background-image:url('battle_bg.jpg');background-size:cover;background-position:center;
   border-radius:8px;overflow:hidden;border:3px solid #3e2723;
   box-shadow:0 4px 12px rgba(0,0,0,.3)}
 
@@ -229,7 +229,11 @@ function renderPredict(d){
   // Update dialog during sensing
   if(webState==='idle'||webState==='sensing'){
     webState='sensing';
-    setDialog(`제스처를 분석 중... <span class="hl">${top}</span> ${topPct}%`);
+    if(topPkm && topPct > 20){
+      setDialog(`터치하여 <span class="hl">몬스터볼</span>을 던지세요! (예상: ${getEmoji(topPkm)} ${topPkm} ${topPct}%)`);
+    }else{
+      setDialog(`제스처를 분석 중... <span class="hl">${top}</span> ${topPct}%`);
+    }
   }
 }
 
@@ -352,7 +356,7 @@ function doConnect(){
   client=mqtt.connect(`ws://${h}:${p}`,{clientId:'pkb_'+Math.random().toString(16).slice(2,8)});
   client.on('connect',()=>{
     setConnected(true);
-    client.subscribe(['pokemon/config','pokemon/predict','pokemon/gesture','pokemon/capture']);
+    client.subscribe(['pokemon/config','pokemon/predict','pokemon/capture']);
   });
   client.on('close',()=>setConnected(false));
   client.on('error',e=>console.error(e));
@@ -360,12 +364,6 @@ function doConnect(){
     const str=msg.toString();let d;try{d=JSON.parse(str);}catch(e){return;}
     if(topic==='pokemon/config'){config=d;renderDex();}
     else if(topic==='pokemon/predict'){if(webState!=='catching')renderPredict(d);}
-    else if(topic==='pokemon/gesture'){
-      webState='ready';
-      const g=d.gesture?d.gesture.toUpperCase():'';
-      const pkm=getPokemonForGesture(g);
-      setDialog(`터치하여 <span class="hl">몬스터볼</span>을 던지세요!${pkm?` (예상: ${pkm})`:''}`);
-    }
     else if(topic==='pokemon/capture'){
       playCaptureAnim(d.pokemon,d.hidden);
       if(d.pokemon){caught.add(d.pokemon);saveCaught();renderDex();}
