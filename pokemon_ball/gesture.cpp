@@ -1,18 +1,19 @@
 /*
  * gesture.cpp — BNO055 data collection + Edge Impulse inference.
  *
- * Reuses the raw-I2C read pattern from edgeImpulse/gesture_infer because
- * the Adafruit BNO055 library can return zeros while WiFi is active.
+ * Based on bee2/edgeImpulse/gesture_infer — Adafruit getVector (proven
+ * WiFi-safe in STA mode), 100 Hz sampling, gyro in dps.
  *
- * The EI integration mirrors gesture_infer.ino exactly:
- *   - 100 samples at 50 Hz (6 axes each → 600-element feature buffer)
+ * The EI integration mirrors bee2's gesture_infer.ino:
+ *   - EI_CLASSIFIER_RAW_SAMPLE_COUNT samples at EI_CLASSIFIER_FREQUENCY Hz
+ *     (6 axes each → EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE feature buffer)
  *   - ei::signal_t + run_classifier()
  *   - pick the highest-confidence label
  *
  * A compile-time stub (when USE_EDGE_IMPULSE is not defined) lets the full
- * program run without the trained model.  The stub collects the same 2 s
- * of real BNO055 data, then returns a pseudo-gesture derived from the
- * dominant movement axis so the pipeline is end-to-end testable today.
+ * program run without the trained model.  The stub collects the same window
+ * of real BNO055 data, then returns a pseudo-gesture so the pipeline is
+ * end-to-end testable today.
  */
 #include "gesture.h"
 #include "config.h"
@@ -38,27 +39,6 @@ static int get_signal_data(size_t offset, size_t length, float* out_ptr) {
 #endif
 
 // -----------------------------------------------------------------------
-// Raw I2C read — bypasses the Adafruit library (WiFi-safe).
-//   reg 0x08  accel (scale 0.01 → m/s²)
-//   reg 0x14  gyro  (scale 1/900 → rad/s)
-//   reg 0x28  linear accel (scale 0.01 → m/s², gravity removed)
-// -----------------------------------------------------------------------
-static void readBNORaw(uint8_t reg, float& x, float& y, float& z, float scale) {
-    Wire.beginTransmission(BNO055_ADDR);
-    Wire.write(reg);
-    Wire.endTransmission();
-    Wire.requestFrom((int)BNO055_ADDR, (int)6);
-    if (Wire.available() >= 6) {
-        int16_t rx = Wire.read() | (Wire.read() << 8);
-        int16_t ry = Wire.read() | (Wire.read() << 8);
-        int16_t rz = Wire.read() | (Wire.read() << 8);
-        x = rx * scale; y = ry * scale; z = rz * scale;
-    } else {
-        x = y = z = 0;
-    }
-}
-
-// -----------------------------------------------------------------------
 // Public API
 // -----------------------------------------------------------------------
 
@@ -67,7 +47,7 @@ bool gestureBegin() {
     Wire.setClock(400000);
 
     if (bno.begin()) {
-        bno.setMode(OPERATION_MODE_NDOF);
+        bno.setExtCrystalUse(true);
         bnoOK = true;
         Serial.println(F("[GESTURE] BNO055 OK"));
     } else {
@@ -76,20 +56,16 @@ bool gestureBegin() {
     return bnoOK;
 }
 
-// Re-apply NDOF after WiFi brought the bus up (brownout workaround
-// from gesture_infer.ino).
 void gesturePostWifiInit() {
-    if (bnoOK) {
-        bno.setMode(OPERATION_MODE_NDOF);
-        delay(50);
-    }
+    // bee2 proved getVector works after WiFi STA — no mode re-assert needed,
+    // but we keep this as a no-op hook for brownout recovery if ever required.
 }
 
 bool gesturePollShake() {
     if (!bnoOK) return false;
-    float x, y, z;
-    readBNORaw(0x28, x, y, z, 0.01);  // linear acceleration (gravity-free)
-    float mag = sqrtf(x * x + y * y + z * z);
+    // VECTOR_LINEARACCEL = gravity-free acceleration (m/s²)
+    imu::Vector<3> la = bno.getVector(Adafruit_BNO055::VECTOR_LINEARACCEL);
+    float mag = sqrtf(la.x() * la.x() + la.y() * la.y() + la.z() * la.z());
     return mag > SHAKE_THRESHOLD;
 }
 
@@ -97,21 +73,35 @@ GestureResult gestureInfer() {
     GestureResult gr = { nullptr, 0.0f, false };
     if (!bnoOK) return gr;
 
-    // ---- Collect 2 s of accel + gyro at 50 Hz ---------------------------
-    // Accumulators for the stub fallback.
-    float sumAx = 0, sumAy = 0, sumAz = 0;
-    unsigned long nextSample = millis();
+    // ---- Determine sample count & interval ------------------------------
+    // When the EI model is present, use its constants.  Otherwise fall back
+    // to the config.h defaults (100 Hz × 2 s = 200 samples).
+#ifdef USE_EDGE_IMPULSE
+    const int    nSamp   = EI_CLASSIFIER_RAW_SAMPLE_COUNT;
+    const int    nAxes   = EI_CLASSIFIER_RAW_SAMPLES_PER_FRAME;   // 6
+    const uint32_t intervalUs = (1000000UL / EI_CLASSIFIER_FREQUENCY);
+#else
+    const int    nSamp   = INFERENCE_SAMPLES;
+    const int    nAxes   = 6;
+    const uint32_t intervalUs = (1000000UL / (1000 / INFERENCE_SAMPLE_MS));
+#endif
 
-    for (int i = 0; i < INFERENCE_SAMPLES; i++) {
-        nextSample += INFERENCE_SAMPLE_MS;
-        while ((long)(millis() - nextSample) < 0) delay(1);
+    // ---- Collect window of accel + gyro at precise intervals ------------
+    // Uses micros() busy-wait (same as bee2/gesture_collect) for accurate
+    // 100 Hz timing.  Accel = m/s² (includes gravity), gyro = dps.
+    float sumAx = 0, sumAy = 0, sumAz = 0;   // stub accumulators
 
-        float ax, ay, az, gx, gy, gz;
-        readBNORaw(0x08, ax, ay, az, 0.01);    // accel m/s² (with gravity)
-        readBNORaw(0x14, gx, gy, gz, 1.0f / 900.0f);  // gyro rad/s
+    uint32_t next = micros();
+    for (int i = 0; i < nSamp; i++) {
+        while ((int32_t)(micros() - next) < 0) { }
+        imu::Vector<3> a = bno.getVector(Adafruit_BNO055::VECTOR_ACCELEROMETER);
+        imu::Vector<3> g = bno.getVector(Adafruit_BNO055::VECTOR_GYROSCOPE);
+
+        float ax = a.x(), ay = a.y(), az = a.z();
+        float gx = g.x(), gy = g.y(), gz = g.z();
 
 #ifdef USE_EDGE_IMPULSE
-        int idx = i * EI_CLASSIFIER_RAW_SAMPLES_PER_FRAME;
+        int idx = i * nAxes;
         features[idx]     = ax;
         features[idx + 1] = ay;
         features[idx + 2] = az;
@@ -120,6 +110,7 @@ GestureResult gestureInfer() {
         features[idx + 5] = gz;
 #endif
         sumAx += ax; sumAy += ay; sumAz += az;
+        next += intervalUs;
     }
 
 #ifdef USE_EDGE_IMPULSE
@@ -150,17 +141,10 @@ GestureResult gestureInfer() {
 
 #else
     // ---- Stub: derive a pseudo-gesture from dominant motion axis -------
-    // Mean acceleration (gravity ~9.8 on one axis).  Subtract the static
-    // component so only the dynamic shake remains, then pick the axis with
-    // the largest absolute mean deviation.
-    sumAx /= INFERENCE_SAMPLES;
-    sumAy /= INFERENCE_SAMPLES;
-    sumAz /= INFERENCE_SAMPLES;
+    sumAx /= nSamp; sumAy /= nSamp; sumAz /= nSamp;
 
     // Remove approximate gravity (Z usually ~9.8 at rest).
-    float dx = sumAx;
-    float dy = sumAy;
-    float dz = sumAz - 9.8f;
+    float dx = sumAx, dy = sumAy, dz = sumAz - 9.8f;
 
     int pick = 0;
     float a = fabsf(dx), b = fabsf(dy), c = fabsf(dz);
@@ -168,8 +152,7 @@ GestureResult gestureInfer() {
     else if (b >= a && b >= c) pick = 1;
     else                       pick = 2;
 
-    // Map the three axis groups to table entries, cycling for variety so
-    // all code paths (display, MQTT, web) get exercised during testing.
+    // Cycle through table entries for testing variety.
     pick = (pick + (millis() / 1000)) % GESTURE_COUNT;
     if (pick < 0) pick = 0;
 

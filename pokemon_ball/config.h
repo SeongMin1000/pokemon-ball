@@ -65,8 +65,8 @@
 // ========================================================================
 #define SHAKE_CHECK_MS    50     // how often to poll for shake in IDLE
 #define SHAKE_THRESHOLD   12.0f  // linear-accel magnitude (m/s²) that = "shaking"
-#define INFERENCE_SAMPLE_MS 20   // 50 Hz
-#define INFERENCE_SAMPLES   100  // 2 seconds  (must match EI model window)
+#define INFERENCE_SAMPLE_MS 10   // 100 Hz (must match EI model frequency)
+#define INFERENCE_SAMPLES   200  // 2 seconds at 100 Hz (overridden by EI model)
 #define MIN_CONFIDENCE      0.50f // below this the gesture is discarded
 
 // Gestures whose label means "no gesture" — inference result is ignored.
