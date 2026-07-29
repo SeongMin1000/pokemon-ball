@@ -61,7 +61,7 @@ static void reveal() {
     confirmedHidden = rollHidden();
 
     if (confirmedHidden) {
-        displayHidden(HIDDEN_NAME, nullptr, 0);
+        displayHidden(HIDDEN_NAME, HIDDEN_IMAGE, HIDDEN_IMAGE_SIZE);
         mqttPublishResult(pendingGesture.label, HIDDEN_NAME, true);
         Serial.printf("[GAME] HIDDEN! %s appears!\n", HIDDEN_NAME);
     } else {

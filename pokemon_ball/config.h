@@ -9,6 +9,23 @@
 #include <Arduino.h>
 
 // ========================================================================
+// Image assets (PROGMEM JPEG C arrays)
+// ========================================================================
+#include "images/pokemon_ball.h"
+#include "images/pikachu.h"
+#include "images/charmander.h"
+#include "images/squirtle.h"
+#include "images/ditto.h"
+#include "images/sanjini.h"
+
+#define POKEBALL_IMAGE      pokemon_ball
+#define POKEBALL_IMAGE_SIZE sizeof(pokemon_ball)
+
+// Hidden character image.
+#define HIDDEN_IMAGE        sanjini
+#define HIDDEN_IMAGE_SIZE   sizeof(sanjini)
+
+// ========================================================================
 // Edge Impulse switch
 // ========================================================================
 // Uncomment this line AFTER downloading the Edge Impulse C++ export and
@@ -116,15 +133,14 @@ struct PokemonEntry {
     uint16_t         placeholderColor;
 };
 
-// TODO: Replace placeholders with real gesture labels and pokemon names
-//       once the Edge Impulse model is trained and the mapping is decided.
-//       The number of rows may be changed freely — GESTURE_COUNT is derived.
+// TODO: Replace gesture labels with real Edge Impulse model labels once
+//       trained.  Add/remove rows freely — GESTURE_COUNT is derived.
 const PokemonEntry POKEMON_TABLE[] = {
-    { "GESTURE_A", "Pokemon_A", nullptr, 0, COLOR_RED    },
-    { "GESTURE_B", "Pokemon_B", nullptr, 0, COLOR_GREEN  },
-    { "GESTURE_C", "Pokemon_C", nullptr, 0, COLOR_BLUE   },
-    { "GESTURE_D", "Pokemon_D", nullptr, 0, COLOR_YELLOW },
-    { "GESTURE_E", "Pokemon_E", nullptr, 0, COLOR_CYAN   },
+    { "left",   "Pikachu",    pikachu,     sizeof(pikachu),     COLOR_RED    },
+    { "right",  "Charmander", charmander,  sizeof(charmander),  COLOR_GREEN  },
+    { "up",     "Squirtle",   squirtle,    sizeof(squirtle),    COLOR_BLUE   },
+    { "down",   "Ditto",      ditto,       sizeof(ditto),       COLOR_PURPLE },
+    { "circle", "Pokemon_E",  nullptr,     0,                   COLOR_YELLOW },
 };
 
 const int GESTURE_COUNT = sizeof(POKEMON_TABLE) / sizeof(POKEMON_TABLE[0]);

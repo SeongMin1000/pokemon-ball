@@ -15,39 +15,48 @@ static TFT_eSPI tft = TFT_eSPI();
 
 #define minimum(a, b) (((a) < (b)) ? (a) : (b))
 
+// Forward declarations (drawJpegCentered is defined below drawPokeball).
+static void drawJpegCentered(const uint8_t* jpg, uint32_t sz);
+
 // -----------------------------------------------------------------------
 // Internal helpers
 // -----------------------------------------------------------------------
 
-// Draw a classic pokeball filling the 240×240 round display.
-// ready = true  → small "TOUCH!" hint text (gesture already inferred)
+// Draw the pokeball.  Uses the JPEG asset from config.h; falls back to
+// the procedural drawing if no image is available.
+// ready = true  → "TOUCH!" hint overlay (gesture already inferred)
 // ready = false → plain idle pokeball
 static void drawPokeball(bool ready) {
-    tft.fillScreen(TFT_BLACK);
+    const uint8_t* img = POKEBALL_IMAGE;
+    if (img) {
+        tft.fillScreen(TFT_BLACK);
+        drawJpegCentered(img, (uint32_t)POKEBALL_IMAGE_SIZE);
+    } else {
+        tft.fillScreen(TFT_BLACK);
 
-    // Top half red, bottom half white
-    int half = SCREEN_H / 2;
-    tft.fillRect(0, 0, SCREEN_W, half, TFT_RED);
-    tft.fillRect(0, half, SCREEN_W, half, TFT_WHITE);
+        // Top half red, bottom half white
+        int half = SCREEN_H / 2;
+        tft.fillRect(0, 0, SCREEN_W, half, TFT_RED);
+        tft.fillRect(0, half, SCREEN_W, half, TFT_WHITE);
 
-    // Black equator band
-    int bandH = 12;
-    int bandY = half - bandH / 2;
-    tft.fillRect(0, bandY, SCREEN_W, bandH, TFT_BLACK);
+        // Black equator band
+        int bandH = 12;
+        int bandY = half - bandH / 2;
+        tft.fillRect(0, bandY, SCREEN_W, bandH, TFT_BLACK);
 
-    // Centre button
-    int r1 = 28, r2 = 18;
-    tft.fillCircle(CENTER_X, CENTER_Y, r1, TFT_BLACK);
-    tft.fillCircle(CENTER_X, CENTER_Y, r2, TFT_WHITE);
-    tft.drawCircle(CENTER_X, CENTER_Y, r2, TFT_BLACK);
+        // Centre button
+        int r1 = 28, r2 = 18;
+        tft.fillCircle(CENTER_X, CENTER_Y, r1, TFT_BLACK);
+        tft.fillCircle(CENTER_X, CENTER_Y, r2, TFT_WHITE);
+        tft.drawCircle(CENTER_X, CENTER_Y, r2, TFT_BLACK);
+    }
 
     if (ready) {
         tft.setTextDatum(MC_DATUM);
-        tft.setTextColor(TFT_WHITE, TFT_RED);
+        tft.setTextColor(TFT_WHITE, TFT_BLACK);
         tft.setTextSize(2);
-        tft.drawString("TOUCH!", CENTER_X, 30);
-        tft.setTextColor(TFT_BLACK, TFT_WHITE);
-        tft.drawString("TO THROW", CENTER_X, SCREEN_H - 30);
+        tft.drawString("TOUCH!", CENTER_X, 20);
+        tft.drawString("TO THROW", CENTER_X, SCREEN_H - 20);
     }
 }
 

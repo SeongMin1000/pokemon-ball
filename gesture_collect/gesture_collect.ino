@@ -98,7 +98,7 @@ button:disabled{opacity:.5;cursor:default}
 
 <script>
 // ---- quick-select label buttons ----
-const LABELS=['idle','left','right','up','circle','shake'];
+const LABELS=['idle','left','right','up','down','circle'];
 const lb=document.getElementById('labelBtns');
 LABELS.forEach(l=>{const b=document.createElement('button');b.textContent=l;
   b.onclick=()=>{document.getElementById('label').value=l;
