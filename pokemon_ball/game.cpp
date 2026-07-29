@@ -1,10 +1,14 @@
 /*
  * game.cpp — Central state machine that wires the modules together.
  *
- * The hidden-character (Sanjini) logic lives here: on every reveal there is
- * a HIDDEN_PROBABILITY percent chance that the gesture result is overridden
- * and the hidden character is shown instead.  The MQTT result message
- * carries the "hidden" flag accordingly.
+ * Uses continuous rolling-window inference (gesturePoll) so the web
+ * dashboard gets real-time score updates during sensing.
+ *
+ * States:
+ *   IDLE          → pokeball, continuous inference + score publishing
+ *   SENSING       → "Sensing..." shown, wait for valid classification
+ *   GESTURE_READY → pokeball "TOUCH!", wait for tap
+ *   REVEALED      → pokemon (or Sanjini), auto-return to IDLE
  */
 #include "game.h"
 #include "config.h"
@@ -15,7 +19,7 @@
 
 enum class State {
     IDLE,
-    INFERING,
+    SENSING,
     GESTURE_READY,
     REVEALED,
 };
@@ -23,14 +27,12 @@ enum class State {
 static State         state         = State::IDLE;
 static unsigned long stateEnterMs  = 0;
 static unsigned long lastShakePoll = 0;
+static unsigned long lastScorePub  = 0;
 
-// The gesture inferred during INFERING — not yet "confirmed" until the
-// user taps the touch sensor.
 static GestureResult pendingGesture;
 
-// Index into POKEMON_TABLE for the confirmed gesture (or -1 for hidden).
-static int  confirmedIndex  = -1;
-static bool confirmedHidden = false;
+#define SCORE_PUB_MS 250   // publish scores every 250 ms
+#define SENSING_TIMEOUT_MS 3000   // give up if no valid gesture in 3 s
 
 // -----------------------------------------------------------------------
 // Helpers
@@ -41,7 +43,6 @@ static void enterState(State s) {
     stateEnterMs = millis();
 }
 
-// Look up a gesture label in the table; returns -1 if not found.
 static int findGestureIndex(const char* label) {
     if (!label) return -1;
     for (int i = 0; i < GESTURE_COUNT; i++) {
@@ -51,26 +52,29 @@ static int findGestureIndex(const char* label) {
     return -1;
 }
 
-// Roll the hidden-character dice.
 static bool rollHidden() {
-    return (random(1, 101) <= HIDDEN_PROBABILITY);  // 1..100 inclusive
+    return (random(1, 101) <= HIDDEN_PROBABILITY);
 }
 
-// Reveal the pokemon (or hidden character) and publish the result.
+static void publishScores() {
+    float scores[MAX_LABELS];
+    int n = gestureGetScores(scores, MAX_LABELS);
+    const char* labels[MAX_LABELS];
+    for (int i = 0; i < n; i++) labels[i] = gestureGetLabel(i);
+    mqttPublishScores(labels, scores, n);
+}
+
 static void reveal() {
-    confirmedHidden = rollHidden();
+    bool confirmedHidden = rollHidden();
 
     if (confirmedHidden) {
         displayHidden(HIDDEN_NAME, HIDDEN_IMAGE, HIDDEN_IMAGE_SIZE);
         mqttPublishResult(pendingGesture.label, HIDDEN_NAME, true);
         Serial.printf("[GAME] HIDDEN! %s appears!\n", HIDDEN_NAME);
     } else {
-        confirmedIndex = findGestureIndex(pendingGesture.label);
-        if (confirmedIndex < 0) {
-            // Label not in table — fall back to entry 0 as a safety net.
-            confirmedIndex = 0;
-        }
-        const PokemonEntry& pe = POKEMON_TABLE[confirmedIndex];
+        int idx = findGestureIndex(pendingGesture.label);
+        if (idx < 0) idx = 0;
+        const PokemonEntry& pe = POKEMON_TABLE[idx];
         displayPokemon(pe.pokemonName, pe.jpgImage, pe.jpgSize,
                        pe.placeholderColor);
         mqttPublishResult(pe.gestureLabel, pe.pokemonName, false);
@@ -88,35 +92,43 @@ void gameInit() {
 }
 
 void gameLoop() {
+    // Continuous sampling + inference (must be called every iteration)
+    gesturePoll();
+
     unsigned long now = millis();
+
+    // Publish real-time scores in IDLE and SENSING states
+    if ((state == State::IDLE || state == State::SENSING) &&
+        now - lastScorePub >= SCORE_PUB_MS) {
+        lastScorePub = now;
+        publishScores();
+    }
 
     switch (state) {
 
     // -------------------------------------------------- IDLE
     case State::IDLE: {
-        // Poll for shake at the configured interval (non-blocking).
         if (now - lastShakePoll >= SHAKE_CHECK_MS) {
             lastShakePoll = now;
             if (gesturePollShake()) {
-                Serial.println(F("[GAME] shake detected — inferring..."));
+                Serial.println(F("[GAME] shake detected — sensing..."));
                 displayMessage("Sensing...", nullptr);
-                enterState(State::INFERING);
+                enterState(State::SENSING);
             }
         }
         break;
     }
 
-    // -------------------------------------------------- INFERING
-    case State::INFERING: {
-        // Blocking 2-second collection + classification.
-        pendingGesture = gestureInfer();
-
-        if (pendingGesture.valid) {
-            mqttPublishGesture(pendingGesture.label);
-            displayPokeball(true);   // "TOUCH!" hint
+    // -------------------------------------------------- SENSING
+    case State::SENSING: {
+        GestureResult gr = gestureGetResult();
+        if (gr.valid) {
+            pendingGesture = gr;
+            mqttPublishGesture(gr.label);
+            displayPokeball(true);
             enterState(State::GESTURE_READY);
-        } else {
-            // Idle / low-confidence → back to the plain pokeball.
+        } else if (now - stateEnterMs >= SENSING_TIMEOUT_MS) {
+            // No valid gesture within 3 s → back to idle
             displayPokeball(false);
             enterState(State::IDLE);
         }
@@ -135,13 +147,10 @@ void gameLoop() {
 
     // -------------------------------------------------- REVEALED
     case State::REVEALED: {
-        // Auto-return to idle after the reveal duration.
         if (now - stateEnterMs >= REVEAL_DISPLAY_MS) {
             displayPokeball(false);
             enterState(State::IDLE);
         }
-        // Allow an early tap to skip — but only after 3s to prevent
-        // touch noise from cutting the display short.
         if (now - stateEnterMs >= 3000 && touchTapped()) {
             displayPokeball(false);
             enterState(State::IDLE);

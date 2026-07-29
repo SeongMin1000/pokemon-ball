@@ -97,10 +97,10 @@ h1{text-align:center;color:var(--gold);margin-bottom:4px;font-size:1.5rem}
     <div id="hiddenTag" style="text-align:center;margin-top:6px;color:var(--purple);font-weight:bold;display:none">★ HIDDEN CHARACTER ★</div>
   </div>
 
-  <!-- Probability table -->
+  <!-- Real-time gesture scores -->
   <div class="card">
-    <h2>Appearance Probability by Gesture</h2>
-    <div id="probArea"><span style="color:var(--muted)">Waiting for config...</span></div>
+    <h2>Live Gesture Recognition</h2>
+    <div id="scoreArea"><span style="color:var(--muted)">Waiting for scores...</span></div>
   </div>
 
   <!-- Pokedex -->
@@ -128,23 +128,32 @@ function saveCaught(){
 }
 
 // ---- Rendering ----
-function renderProb(){
-  if(!config) return;
-  const area = document.getElementById('probArea');
-  area.innerHTML = '';
-  const hp = config.hiddenProb || 2;
-  const np = 100 - hp;
-  config.mappings.forEach(m=>{
-    const sec = document.createElement('div');
-    sec.className = 'prob-section';
-    sec.innerHTML = `<h3>${m.gesture}</h3>`
-      + `<div class="bar-row"><div class="bar-label">${m.pokemon}</div>`
-      + `<div class="bar-track"><div class="bar-fill normal" style="width:${np}%"></div></div>`
-      + `<div class="bar-val">${np}%</div></div>`
-      + `<div class="bar-row"><div class="bar-label">${config.hidden}</div>`
-      + `<div class="bar-track"><div class="bar-fill hidden" style="width:${hp}%"></div></div>`
-      + `<div class="bar-val">${hp}%</div></div>`;
-    area.appendChild(sec);
+const SCORE_COLORS = {circle:'#4c8bf5',down:'#e94560',idle:'#888',
+  left:'#f5c518',right:'#3fbf6f',up:'#9b59b6'};
+let scoreLabels = null;
+
+function renderScores(scores){
+  const area = document.getElementById('scoreArea');
+  const entries = Object.entries(scores).sort((a,b)=>b[1]-a[1]);
+
+  // Build bars on first call
+  if(!scoreLabels || scoreLabels.length !== entries.length){
+    scoreLabels = entries.map(e=>e[0]);
+    area.innerHTML = scoreLabels.map(l=>{
+      const c = SCORE_COLORS[l] || '#4c8bf5';
+      return `<div class="bar-row"><div class="bar-label">${l}</div>`
+        + `<div class="bar-track"><div class="bar-fill" id="sf_${l}" style="background:${c};width:0%"></div></div>`
+        + `<div class="bar-val" id="sv_${l}">0%</div></div>`;
+    }).join('');
+  }
+
+  // Update values
+  entries.forEach(([label,val])=>{
+    const pct = Math.round(val*100);
+    const fill = document.getElementById('sf_'+label);
+    const text = document.getElementById('sv_'+label);
+    if(fill) fill.style.width = pct+'%';
+    if(text) text.textContent = pct+'%';
   });
 }
 
@@ -188,7 +197,7 @@ function doConnect(){
 
   client.on('connect', ()=>{
     setConnected(true);
-    client.subscribe(['pokemon/config','pokemon/gesture','pokemon/result']);
+    client.subscribe(['pokemon/config','pokemon/gesture','pokemon/result','pokemon/scores']);
     console.log('subscribed');
   });
   client.on('close', ()=> setConnected(false));
@@ -201,9 +210,11 @@ function doConnect(){
 
     if(topic === 'pokemon/config'){
       config = d;
-      renderProb();
       renderDex();
       console.log('config received', d);
+    }
+    else if(topic === 'pokemon/scores'){
+      renderScores(d);
     }
     else if(topic === 'pokemon/gesture'){
       document.getElementById('curGesture').textContent = d.gesture || '—';

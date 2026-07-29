@@ -23,6 +23,8 @@ void mqttPublishConfig();
 void mqttPublishGesture(const char* gestureLabel);
 void mqttPublishResult(const char* gestureLabel, const char* pokemonName,
                        bool hidden);
+void mqttPublishScores(const char* const* labels, const float* scores,
+                       int count);
 
 // True when the broker connection is currently live.
 bool mqttConnected();

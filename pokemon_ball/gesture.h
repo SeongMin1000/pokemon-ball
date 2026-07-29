@@ -1,32 +1,38 @@
 /*
- * gesture.h — Gesture inference module (BNO055 + Edge Impulse).
+ * gesture.h — Gesture inference module (rolling window, bee2 pattern).
  *
- * Two public operations:
- *   gestureBegin()   — initialise I2C and BNO055
- *   gesturePollShake() — non-blocking: returns true when the board is shaken
- *   gestureInfer()   — blocking: collects 2 s of data and runs the classifier,
- *                       returns the winning label + confidence.
- *
- * When USE_EDGE_IMPULSE is defined in config.h the real Edge Impulse model
- * is used.  Otherwise a stub analyses the collected data and returns a
- * label taken from POKEMON_TABLE so the rest of the program is testable.
+ * gesturePoll() must be called every loop iteration — it samples the
+ * BNO055 at 100 Hz into a ring buffer and runs the Edge Impulse
+ * classifier every 250 ms.  Results (scores for all labels) are
+ * available immediately via gestureGetScores() / gestureGetResult().
  */
 #pragma once
 #include <Arduino.h>
 
+#define MAX_LABELS 6
+
 struct GestureResult {
-    const char* label;      // winning label (matches a POKEMON_TABLE entry)
+    const char* label;      // winning label (or "idle" / "uncertain")
     float       confidence; // 0.0 – 1.0
-    bool        valid;      // false if idle / below threshold / hardware error
+    bool        valid;      // false if idle / below threshold
 };
 
 bool  gestureBegin();
-
-// Re-apply NDOF mode after WiFi is up (BNO055 brownout workaround).
 void  gesturePostWifiInit();
 
-// Quick non-blocking check (call from the idle loop).
+// Call every loop iteration — non-blocking 100 Hz sampling + 250 ms inference.
+void  gesturePoll();
+
+// Quick non-blocking shake check (linear-accel magnitude).
 bool  gesturePollShake();
 
-// Blocking 2-second collection + inference.
-GestureResult gestureInfer();
+// Latest inference result (best label).
+GestureResult gestureGetResult();
+
+// Fill outScores with the latest per-label scores (0.0–1.0).
+// Returns the number of labels written.
+int   gestureGetScores(float* outScores, int maxLabels);
+
+// Label name by index (0 .. gestureGetLabelCount()-1).
+const char* gestureGetLabel(int index);
+int   gestureGetLabelCount();

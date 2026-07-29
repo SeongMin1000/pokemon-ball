@@ -1,19 +1,13 @@
 /*
- * gesture.cpp — BNO055 data collection + Edge Impulse inference.
+ * gesture.cpp — BNO055 rolling-window inference (bee2 pattern).
  *
- * Based on bee2/edgeImpulse/gesture_infer — Adafruit getVector (proven
- * WiFi-safe in STA mode), 100 Hz sampling, gyro in dps.
+ * Continuously samples 6-axis IMU data at 100 Hz into a ring buffer
+ * (200 samples × 6 axes = 2 s window).  Runs run_classifier() every
+ * 250 ms on the trailing window.  All scores are available immediately
+ * via gestureGetScores().
  *
- * The EI integration mirrors bee2's gesture_infer.ino:
- *   - EI_CLASSIFIER_RAW_SAMPLE_COUNT samples at EI_CLASSIFIER_FREQUENCY Hz
- *     (6 axes each → EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE feature buffer)
- *   - ei::signal_t + run_classifier()
- *   - pick the highest-confidence label
- *
- * A compile-time stub (when USE_EDGE_IMPULSE is not defined) lets the full
- * program run without the trained model.  The stub collects the same window
- * of real BNO055 data, then returns a pseudo-gesture so the pipeline is
- * end-to-end testable today.
+ * When USE_EDGE_IMPULSE is not defined, a stub generates pseudo-scores
+ * from the real accelerometer data so the full pipeline is testable.
  */
 #include "gesture.h"
 #include "config.h"
@@ -28,19 +22,68 @@
 static Adafruit_BNO055 bno = Adafruit_BNO055(55, BNO055_ADDR, &Wire);
 static bool bnoOK = false;
 
+// ---- Ring buffer -------------------------------------------------------
 #ifdef USE_EDGE_IMPULSE
-static float features[EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE];
+#define N_SAMP EI_CLASSIFIER_RAW_SAMPLE_COUNT
+#define N_AX   EI_CLASSIFIER_RAW_SAMPLES_PER_FRAME
+#define FRAME  EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE
+#else
+#define N_SAMP 200
+#define N_AX   6
+#define FRAME  (N_SAMP * N_AX)
+#endif
 
-// EI signal callback — copies a slice of the feature buffer.
-static int get_signal_data(size_t offset, size_t length, float* out_ptr) {
-    memcpy(out_ptr, features + offset, length * sizeof(float));
+static float ring[N_SAMP][N_AX];
+static int   head  = 0;
+static bool  filled = false;
+
+// ---- Inference timing -------------------------------------------------
+static uint32_t nextSample = 0;   // micros() for 100 Hz sampling
+static uint32_t nextInfer  = 0;   // millis() for 250 ms inference
+
+// ---- Latest results ---------------------------------------------------
+static float    latestScores[MAX_LABELS] = {0};
+static const char* latestTopLabel = "...";
+static float    latestTopConf     = 0.0f;
+static bool     latestValid       = false;
+
+#ifdef USE_EDGE_IMPULSE
+// EI signal callback — copy ring buffer oldest-first.
+static int getData(size_t offset, size_t length, float* out) {
+    for (size_t i = 0; i < length; i++) {
+        size_t f   = offset + i;
+        size_t s   = f / N_AX;
+        size_t a   = f % N_AX;
+        size_t idx = filled ? (head + s) % N_SAMP : s;
+        out[i] = ring[idx][a];
+    }
     return 0;
 }
 #endif
 
-// -----------------------------------------------------------------------
-// Public API
-// -----------------------------------------------------------------------
+// ---- Label helpers -----------------------------------------------------
+static const char* STUB_LABELS[] = { "circle", "down", "idle", "left", "right", "up" };
+static const int   STUB_COUNT = 6;
+
+int gestureGetLabelCount() {
+#ifdef USE_EDGE_IMPULSE
+    return EI_CLASSIFIER_LABEL_COUNT;
+#else
+    return STUB_COUNT;
+#endif
+}
+
+const char* gestureGetLabel(int index) {
+#ifdef USE_EDGE_IMPULSE
+    if (index < 0 || index >= (int)EI_CLASSIFIER_LABEL_COUNT) return "?";
+    return ei_classifier_inferencing_categories[index];
+#else
+    if (index < 0 || index >= STUB_COUNT) return "?";
+    return STUB_LABELS[index];
+#endif
+}
+
+// ---- Public API --------------------------------------------------------
 
 bool gestureBegin() {
     Wire.begin(I2C_SDA, I2C_SCL);
@@ -53,128 +96,146 @@ bool gestureBegin() {
     } else {
         Serial.println(F("[GESTURE] BNO055 FAIL"));
     }
+    nextSample = micros();
+    nextInfer  = millis() + 1000;   // first inference after 1 s of data
     return bnoOK;
 }
 
 void gesturePostWifiInit() {
-    // bee2 proved getVector works after WiFi STA — no mode re-assert needed,
-    // but we keep this as a no-op hook for brownout recovery if ever required.
+    // no-op (bee2 proved getVector works after WiFi STA)
+}
+
+static void runInferenceInternal();   // forward declaration
+
+void gesturePoll() {
+    if (!bnoOK) return;
+    uint32_t now = micros();
+
+    // ---- 100 Hz sampling into ring buffer ----
+    if ((int32_t)(now - nextSample) >= 0) {
+        nextSample = now + 10000;   // 10 ms → 100 Hz
+        imu::Vector<3> a = bno.getVector(Adafruit_BNO055::VECTOR_ACCELEROMETER);
+        imu::Vector<3> g = bno.getVector(Adafruit_BNO055::VECTOR_GYROSCOPE);
+        ring[head][0] = a.x();
+        ring[head][1] = a.y();
+        ring[head][2] = a.z();
+        ring[head][3] = g.x();
+        ring[head][4] = g.y();
+        ring[head][5] = g.z();
+        head = (head + 1) % N_SAMP;
+        if (head == 0) filled = true;
+    }
+
+    // ---- 250 ms inference ----
+    if ((int32_t)(millis() - nextInfer) >= 0 && (filled || head >= N_SAMP / 2)) {
+        nextInfer = millis() + 250;
+        runInferenceInternal();
+    }
+}
+
+static void runInferenceInternal() {
+#ifdef USE_EDGE_IMPULSE
+    ei::signal_t signal;
+    signal.total_length = FRAME;
+    signal.get_data     = &getData;
+
+    ei_impulse_result_t result;
+    if (run_classifier(&signal, &result, false) != EI_IMPULSE_OK) return;
+
+    // Collect all scores + find best
+    float bestVal = -1.0f;
+    const char* bestLabel = "...";
+    for (size_t i = 0; i < EI_CLASSIFIER_LABEL_COUNT; i++) {
+        latestScores[i] = result.classification[i].value;
+        if (result.classification[i].value > bestVal) {
+            bestVal   = result.classification[i].value;
+            bestLabel = ei_classifier_inferencing_categories[i];
+        }
+    }
+    latestTopLabel = bestLabel;
+    latestTopConf  = bestVal;
+    latestValid    = (bestVal >= MIN_CONFIDENCE);
+
+#else
+    // ---- Stub: derive pseudo-scores from ring buffer stats ----
+    float meanA[3] = {0}, varA[3] = {0};
+    int n = filled ? N_SAMP : head;
+    if (n < 10) return;
+
+    for (int i = 0; i < n; i++) {
+        int idx = filled ? (head + i) % N_SAMP : i;
+        for (int a = 0; a < 3; a++) meanA[a] += ring[idx][a];
+    }
+    for (int a = 0; a < 3; a++) meanA[a] /= n;
+    for (int i = 0; i < n; i++) {
+        int idx = filled ? (head + i) % N_SAMP : i;
+        for (int a = 0; a < 3; a++) {
+            float d = ring[idx][a] - meanA[a];
+            varA[a] += d * d;
+        }
+    }
+    for (int a = 0; a < 3; a++) varA[a] /= n;
+
+    // Map variance to label scores (stub labels: circle, down, idle, left, right, up)
+    float totalVar = varA[0] + varA[1] + varA[2] + 1.0f;
+    float idleScore = 1.0f / (1.0f + totalVar * 0.5f);
+    float activeScore = 1.0f - idleScore;
+
+    // Distribute active score based on dominant axis
+    float xRatio = varA[0] / totalVar;
+    float yRatio = varA[1] / totalVar;
+    float zRatio = varA[2] / totalVar;
+
+    latestScores[0] = activeScore * zRatio * 0.8f;              // circle
+    latestScores[1] = activeScore * yRatio * 0.5f;              // down
+    latestScores[2] = idleScore;                                // idle
+    latestScores[3] = activeScore * xRatio * (meanA[0] < 0 ? 0.8f : 0.3f); // left
+    latestScores[4] = activeScore * xRatio * (meanA[0] >= 0 ? 0.8f : 0.3f); // right
+    latestScores[5] = activeScore * yRatio * 0.5f;              // up
+
+    // Normalize
+    float sum = 0;
+    for (int i = 0; i < STUB_COUNT; i++) sum += latestScores[i];
+    if (sum > 0) for (int i = 0; i < STUB_COUNT; i++) latestScores[i] /= sum;
+
+    float bestVal = -1; int bestIdx = 2;
+    for (int i = 0; i < STUB_COUNT; i++) {
+        if (latestScores[i] > bestVal) { bestVal = latestScores[i]; bestIdx = i; }
+    }
+    latestTopLabel = STUB_LABELS[bestIdx];
+    latestTopConf  = bestVal;
+    latestValid    = (bestIdx != 2) && (bestVal >= MIN_CONFIDENCE);  // not idle
+#endif
+
+    // Discard idle labels
+    if (latestValid && latestTopLabel) {
+        for (int j = 0; j < IDLE_LABEL_COUNT; j++) {
+            if (strcmp(latestTopLabel, IDLE_LABELS[j]) == 0) {
+                latestValid = false;
+                break;
+            }
+        }
+    }
 }
 
 bool gesturePollShake() {
     if (!bnoOK) return false;
-    // VECTOR_LINEARACCEL = gravity-free acceleration (m/s²)
     imu::Vector<3> la = bno.getVector(Adafruit_BNO055::VECTOR_LINEARACCEL);
     float mag = sqrtf(la.x() * la.x() + la.y() * la.y() + la.z() * la.z());
     return mag > SHAKE_THRESHOLD;
 }
 
-GestureResult gestureInfer() {
-    GestureResult gr = { nullptr, 0.0f, false };
-    if (!bnoOK) return gr;
-
-    // ---- Determine sample count & interval ------------------------------
-    // When the EI model is present, use its constants.  Otherwise fall back
-    // to the config.h defaults (100 Hz × 2 s = 200 samples).
-#ifdef USE_EDGE_IMPULSE
-    const int    nSamp   = EI_CLASSIFIER_RAW_SAMPLE_COUNT;
-    const int    nAxes   = EI_CLASSIFIER_RAW_SAMPLES_PER_FRAME;   // 6
-    const uint32_t intervalUs = (1000000UL / EI_CLASSIFIER_FREQUENCY);
-#else
-    const int    nSamp   = INFERENCE_SAMPLES;
-    const int    nAxes   = 6;
-    const uint32_t intervalUs = (1000000UL / (1000 / INFERENCE_SAMPLE_MS));
-#endif
-
-    // ---- Collect window of accel + gyro at precise intervals ------------
-    // Uses micros() busy-wait (same as bee2/gesture_collect) for accurate
-    // 100 Hz timing.  Accel = m/s² (includes gravity), gyro = dps.
-    float sumAx = 0, sumAy = 0, sumAz = 0;   // stub accumulators
-
-    uint32_t next = micros();
-    for (int i = 0; i < nSamp; i++) {
-        while ((int32_t)(micros() - next) < 0) { }
-        imu::Vector<3> a = bno.getVector(Adafruit_BNO055::VECTOR_ACCELEROMETER);
-        imu::Vector<3> g = bno.getVector(Adafruit_BNO055::VECTOR_GYROSCOPE);
-
-        float ax = a.x(), ay = a.y(), az = a.z();
-        float gx = g.x(), gy = g.y(), gz = g.z();
-
-#ifdef USE_EDGE_IMPULSE
-        int idx = i * nAxes;
-        features[idx]     = ax;
-        features[idx + 1] = ay;
-        features[idx + 2] = az;
-        features[idx + 3] = gx;
-        features[idx + 4] = gy;
-        features[idx + 5] = gz;
-#endif
-        sumAx += ax; sumAy += ay; sumAz += az;
-        next += intervalUs;
-    }
-
-#ifdef USE_EDGE_IMPULSE
-    // ---- Run the real Edge Impulse classifier ---------------------------
-    ei::signal_t signal;
-    signal.total_length = EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE;
-    signal.get_data     = &get_signal_data;
-
-    ei_impulse_result_t result;
-    EI_IMPULSE_ERROR err = run_classifier(&signal, &result, false);
-    if (err != EI_IMPULSE_OK) {
-        Serial.printf("[GESTURE] classifier error %d\n", err);
-        return gr;
-    }
-
-    // Pick the best label.
-    float bestVal = -1.0f;
-    const char* bestLabel = nullptr;
-    for (size_t i = 0; i < EI_CLASSIFIER_LABEL_COUNT; i++) {
-        if (result.classification[i].value > bestVal) {
-            bestVal   = result.classification[i].value;
-            bestLabel = result.classification[i].label;
-        }
-    }
-    gr.label      = bestLabel;
-    gr.confidence = bestVal;
-    gr.valid      = (bestVal >= MIN_CONFIDENCE);
-
-#else
-    // ---- Stub: derive a pseudo-gesture from dominant motion axis -------
-    sumAx /= nSamp; sumAy /= nSamp; sumAz /= nSamp;
-
-    // Remove approximate gravity (Z usually ~9.8 at rest).
-    float dx = sumAx, dy = sumAy, dz = sumAz - 9.8f;
-
-    int pick = 0;
-    float a = fabsf(dx), b = fabsf(dy), c = fabsf(dz);
-    if (a >= b && a >= c)      pick = 0;
-    else if (b >= a && b >= c) pick = 1;
-    else                       pick = 2;
-
-    // Cycle through table entries for testing variety.
-    pick = (pick + (millis() / 1000)) % GESTURE_COUNT;
-    if (pick < 0) pick = 0;
-
-    gr.label      = POKEMON_TABLE[pick].gestureLabel;
-    gr.confidence = 0.85f;
-    gr.valid      = true;
-#endif
-
-    // Discard "idle" labels.
-    if (gr.valid && gr.label) {
-        for (int j = 0; j < IDLE_LABEL_COUNT; j++) {
-            if (strcmp(gr.label, IDLE_LABELS[j]) == 0) {
-                gr.valid = false;
-                break;
-            }
-        }
-    }
-
-    if (gr.valid) {
-        Serial.printf("[GESTURE] %s (%.1f%%)\n", gr.label, gr.confidence * 100);
-    } else {
-        Serial.println(F("[GESTURE] idle / discarded"));
-    }
+GestureResult gestureGetResult() {
+    GestureResult gr;
+    gr.label      = latestTopLabel;
+    gr.confidence = latestTopConf;
+    gr.valid      = latestValid;
     return gr;
+}
+
+int gestureGetScores(float* outScores, int maxLabels) {
+    int count = gestureGetLabelCount();
+    if (count > maxLabels) count = maxLabels;
+    for (int i = 0; i < count; i++) outScores[i] = latestScores[i];
+    return count;
 }

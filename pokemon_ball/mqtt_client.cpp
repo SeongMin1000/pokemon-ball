@@ -129,3 +129,17 @@ void mqttPublishResult(const char* gestureLabel, const char* pokemonName,
                   pokemonName ? pokemonName : "?",
                   hidden ? "yes" : "no");
 }
+
+void mqttPublishScores(const char* const* labels, const float* scores,
+                       int count) {
+    String json = "{";
+    for (int i = 0; i < count; i++) {
+        if (i > 0) json += ",";
+        json += "\"";
+        json += labels[i] ? labels[i] : "?";
+        json += "\":";
+        json += String(scores[i], 4);
+    }
+    json += "}";
+    client.publish("pokemon/scores", json.c_str());
+}
