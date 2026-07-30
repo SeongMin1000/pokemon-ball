@@ -88,6 +88,7 @@ const char* gestureGetLabel(int index) {
 bool gestureBegin() {
     Wire.begin(I2C_SDA, I2C_SCL);
     Wire.setClock(400000);
+    Wire.setTimeOut(2000);   // 2ms I2C timeout — prevents hang with WiFi active
 
     if (bno.begin()) {
         bno.setExtCrystalUse(true);
@@ -111,7 +112,7 @@ void gesturePoll() {
     if (!bnoOK) return;
     uint32_t now = micros();
 
-    // ---- 100 Hz sampling into ring buffer ----
+    // ---- 100 Hz sampling into ring buffer (fast, non-blocking) ----
     if ((int32_t)(now - nextSample) >= 0) {
         nextSample = now + 10000;   // 10 ms → 100 Hz
         imu::Vector<3> a = bno.getVector(Adafruit_BNO055::VECTOR_ACCELEROMETER);
@@ -125,10 +126,13 @@ void gesturePoll() {
         head = (head + 1) % N_SAMP;
         if (head == 0) filled = true;
     }
+}
 
-    // ---- 250 ms inference ----
+void gesturePollInfer() {
+    if (!bnoOK) return;
+    // ---- 500 ms inference (blocking ~50ms, call AFTER touch check) ----
     if ((int32_t)(millis() - nextInfer) >= 0 && (filled || head >= N_SAMP / 2)) {
-        nextInfer = millis() + 250;
+        nextInfer = millis() + 500;
         runInferenceInternal();
     }
 }
@@ -219,10 +223,19 @@ static void runInferenceInternal() {
 }
 
 bool gesturePollShake() {
-    if (!bnoOK) return false;
-    imu::Vector<3> la = bno.getVector(Adafruit_BNO055::VECTOR_LINEARACCEL);
-    float mag = sqrtf(la.x() * la.x() + la.y() * la.y() + la.z() * la.z());
-    return mag > SHAKE_THRESHOLD;
+    if (!bnoOK || (!filled && head < 10)) return false;
+    // Use ring buffer data (no extra I2C read — prevents WiFi/I2C conflict).
+    // Compute magnitude deviation from gravity over last few samples.
+    int n = 8;
+    float maxDev = 0;
+    for (int i = 0; i < n; i++) {
+        int idx = (head - 1 - i + N_SAMP * 2) % N_SAMP;
+        float ax = ring[idx][0], ay = ring[idx][1], az = ring[idx][2];
+        float mag = sqrtf(ax * ax + ay * ay + az * az);
+        float dev = fabsf(mag - 9.8f);
+        if (dev > maxDev) maxDev = dev;
+    }
+    return maxDev > 8.0f;
 }
 
 GestureResult gestureGetResult() {

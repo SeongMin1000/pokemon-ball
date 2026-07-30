@@ -20,8 +20,11 @@ struct GestureResult {
 bool  gestureBegin();
 void  gesturePostWifiInit();
 
-// Call every loop iteration — non-blocking 100 Hz sampling + 250 ms inference.
+// Call every loop iteration — non-blocking 100 Hz sampling.
 void  gesturePoll();
+
+// Run inference if it's time (blocking ~50ms). Call AFTER touch check.
+void  gesturePollInfer();
 
 // Quick non-blocking shake check (linear-accel magnitude).
 bool  gesturePollShake();

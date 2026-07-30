@@ -3,363 +3,442 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Pokemon Ball</title>
+<title>Pokemon Ball Dashboard</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/neodgm/neodgm-webfont@latest/neodgm/style.css">
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
-*{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --bg:#d4c8a8;--panel:#f5f0e1;--panel-border:#3e2723;
-  --dialog-bg:#36582c;--dialog-border:#1b3a12;--text:#fff;--text-dim:#c8d8c0;
-  --accent:#e65100;--gold:#f9a825;--red:#c62828;--green:#43a047;--purple:#7b1fa2;
-  --font:'Press Start 2P',monospace;
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg-color: #d0d8c8;
+  --platform-color: #a8b8a0;
+  --panel-bg: #f8f8d8;
+  --panel-border: #282828;
+  --dialog-bg: #2a3240;
+  --text-dark: #282828;
+  --text-light: #ffffff;
+  
+  --c-left: #2196F3;
+  --c-up: #4CAF50;
+  --c-right: #FF9800;
+  --c-down: #9C27B0;
+  --c-circle: #E91E63;
 }
-body{font-family:var(--font);background:var(--bg);color:#3e2723;
-  min-height:100vh;display:flex;flex-direction:column;align-items:center;
-  padding:4px;font-size:10px;line-height:1.6;image-rendering:pixelated}
 
-/* Top bar */
-.topbar{display:flex;justify-content:space-between;align-items:center;
-  width:100%;max-width:680px;margin-bottom:4px}
-.topbar h1{font-size:11px;color:var(--red)}
-.conn{display:flex;align-items:center;gap:3px;font-size:8px;color:#555}
-.dot{width:7px;height:7px;border-radius:0;background:var(--red);transition:.3s}
-.dot.on{background:var(--green)}
-.cfg-bar{display:flex;gap:2px}
-.cfg-bar input{background:#fff;border:1px solid #888;color:#333;
-  border-radius:0;padding:2px 4px;font-size:8px;font-family:var(--font);width:80px}
-.cfg-bar button{background:var(--accent);color:#fff;border:none;border-radius:0;
-  padding:2px 8px;cursor:pointer;font-size:8px;font-family:var(--font)}
-
-/* Battle area — full background image */
-.battle{position:relative;width:100%;max-width:680px;aspect-ratio:4/3;
-  background-image:url('battle_bg.jpg');background-size:100% 100%;background-position:center;
-  background-repeat:no-repeat;overflow:hidden;border:3px solid var(--panel-border);
-  box-shadow:none}
-
-/* Trainer (bottom-left) */
-.trainer{position:absolute;bottom:5%;left:4%;width:16%;z-index:3}
-.trainer img{width:100%;image-rendering:pixelated;filter:drop-shadow(1px 1px 2px rgba(0,0,0,.4))}
-.trainer-fallback{font-size:2rem;text-align:center;filter:drop-shadow(1px 1px 2px rgba(0,0,0,.4))}
-
-/* Wild pokemon (top-right) — LARGE, main focus */
-.wild{position:absolute;top:6%;right:6%;width:30%;max-width:140px;z-index:3;
-  text-align:center}
-.wild img{width:100%;image-rendering:pixelated;filter:drop-shadow(2px 2px 4px rgba(0,0,0,.4))}
-.wild.silhouette img{filter:brightness(0) opacity(.9)}
-.wild.reveal img{animation:revealPkm .4s steps(4)}
-@keyframes revealPkm{0%{transform:scale(0);opacity:0}60%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}}
-.wild-label{font-size:8px;color:#fff;text-shadow:1px 1px 2px #000;margin-top:2px}
-
-/* Pokeball animation — trainer to wild pokemon */
-.pokeball{position:absolute;font-size:18px;z-index:10;opacity:0;pointer-events:none;
-  bottom:12%;left:12%}
-.pokeball.throw{animation:throwArc .7s cubic-bezier(.3,.1,.5,1) forwards}
-@keyframes throwArc{
-  0%{opacity:1;transform:translate(0,0) rotate(0)}
-  50%{transform:translate(160px,-100px) rotate(360deg)}
-  100%{opacity:.7;transform:translate(300px,-170px) rotate(720deg)}
+body {
+  font-family: 'DungGeunMo', 'Segoe UI', sans-serif;
+  background: #1a1a1a;
+  color: var(--text-dark);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2vh 2vw;
+  gap: 15px;
 }
-.pokeball.drop{animation:ballDrop .3s ease-in forwards}
-@keyframes ballDrop{to{opacity:1;transform:translate(300px,-140px) scale(.7)}}
-.pokeball.shake{animation:ballShake .3s ease-in-out 3}
-@keyframes ballShake{0%,100%{transform:translate(300px,-140px) rotate(0)}25%{transform:translate(300px,-140px) rotate(-12deg)}75%{transform:translate(300px,-140px) rotate(12deg)}}
-.flash{position:absolute;inset:0;background:#fff;opacity:0;z-index:8;pointer-events:none}
-.flash.active{animation:flashAnim .3s steps(2)}
-@keyframes flashAnim{0%{opacity:.6}100%{opacity:0}}
 
-/* AI panel (top-left) — bigger, flat GBA style */
-.ai-panel{position:absolute;top:3%;left:3%;width:44%;max-width:280px;z-index:5;
-  background:var(--panel);border:2px solid var(--panel-border);border-radius:0;
-  padding:6px;font-size:8px;color:#3e2723;box-shadow:none}
-.ai-panel .ai-title{font-size:9px;margin-bottom:4px;color:var(--accent);border-bottom:1px solid #ccc;padding-bottom:2px}
-.gest-row{display:flex;align-items:center;gap:3px;margin:2px 0}
-.gest-label{width:45px;font-size:8px}
-.gest-bar{flex:1;height:7px;background:rgba(0,0,0,.15);border:1px solid #aaa;border-radius:0;overflow:hidden}
-.gest-fill{height:100%;background:#4fc3f7;transition:width .2s}
-.gest-row.top .gest-fill{background:var(--gold)}
-.gest-row.top .gest-label{color:var(--red)}
-.gest-val{width:24px;font-size:7px;text-align:right}
-.appear-section{margin-top:5px;padding-top:3px;border-top:1px solid #ccc}
-.appear-title{font-size:7px;color:#888;margin-bottom:2px}
-.appear-row{display:flex;justify-content:space-between;font-size:8px;margin:1px 0}
-.appear-row.top{font-weight:bold;color:var(--accent)}
-.appear-row.hidden-row{color:var(--purple)}
-.appear-val{font-size:7px}
+/* 상단 연결 바 */
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  max-width: 1400px;
+  color: white;
+}
+.topbar h1 { font-size: clamp(1.2rem, 3vw, 2rem); color: #ffcb05; text-shadow: 2px 2px 0 #2a75bb; }
+.conn { display: flex; align-items: center; gap: 8px; font-size: 1rem; }
+.dot { width: 14px; height: 14px; border-radius: 50%; background: #f44336; }
+.dot.on { background: #4caf50; box-shadow: 0 0 8px #4caf50; }
+.cfg-bar { display: flex; gap: 6px; }
+.cfg-bar input {
+  background: white; border: 2px solid #555; font-family: 'DungGeunMo';
+  padding: 6px; font-size: 1rem; width: 120px;
+}
+.cfg-bar input#wsport { width: 70px; }
+.cfg-bar button {
+  background: #e53935; color: white; border: 2px solid white;
+  padding: 6px 15px; cursor: pointer; font-family: 'DungGeunMo'; font-size: 1rem;
+}
 
-/* Pokedex (bottom-right) — small thumbnail grid */
-.dex-panel{position:absolute;bottom:4%;right:3%;width:26%;max-width:150px;z-index:5;
-  background:var(--panel);border:2px solid var(--panel-border);border-radius:0;
-  padding:4px;box-shadow:none}
-.dex-title{font-size:7px;color:var(--red);margin-bottom:3px;text-align:center}
-.dex-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:2px}
-.dex-cell{text-align:center;background:rgba(0,0,0,.06);border:1px solid #ddd;
-  padding:2px;border-radius:0}
-.dex-cell.caught{border-color:var(--green);background:rgba(67,160,71,.1)}
-.dex-cell.hidden-cell{border-style:dashed;border-color:var(--purple)}
-.dex-cell.hidden-cell.caught{border-style:solid}
-.dex-emoji{font-size:14px;line-height:1.2}
-.dex-name{font-size:6px;color:#888;margin-top:1px}
-.dex-cell.caught .dex-name{color:#333}
-.dex-cell.hidden-cell.caught .dex-name{color:var(--purple)}
+/* 중앙 콘텐츠 래퍼 (좌측 UI + 배틀 화면 + 우측 UI) */
+.content-wrapper {
+  display: flex;
+  width: 100%;
+  max-width: 1400px;
+  gap: 20px;
+  justify-content: center;
+  align-items: stretch;
+}
 
-/* Dialog box (bottom) — GBA style */
-.dialog{width:100%;max-width:680px;background:var(--dialog-bg);
-  border:3px solid var(--dialog-border);border-radius:0;padding:8px 12px;
-  margin-top:4px;min-height:48px;display:flex;align-items:center}
-.dialog-text{color:var(--text);font-size:9px;line-height:1.5}
-.dialog-text .hl{color:var(--gold)}
-.dialog-text .pk{color:#ffeb3b}
-.dialog-text .hidden-text{color:#ce93d8}
+/* UI 패널 공통 */
+.gba-panel {
+  background: var(--panel-bg);
+  border: 4px solid var(--panel-border);
+  border-radius: 8px;
+  box-shadow: 4px 4px 0 rgba(0,0,0,0.2);
+  padding: 15px;
+}
 
-@media(max-width:480px){
-  .ai-panel{width:50%;font-size:7px}
-  .dex-panel{width:34%}
-  .trainer{width:14%}
-  .wild{width:26%}
-  .dialog-text{font-size:8px}
+/* 좌/우 사이드 패널 */
+.side-panel {
+  flex: 1;
+  min-width: 250px;
+  max-width: 350px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 배틀 화면 */
+.battle {
+  position: relative;
+  flex: 2;
+  min-width: 300px;
+  aspect-ratio: 4/3;
+  background-color: var(--bg-color);
+  border: 6px solid var(--panel-border);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+}
+
+/* 배틀 플랫폼 */
+.platform { position: absolute; background: var(--platform-color); border-radius: 50%; z-index: 1; }
+.platform.wild-plat { top: 35%; right: 5%; width: 50%; height: 25%; }
+.platform.trainer-plat { bottom: 10%; left: -5%; width: 60%; height: 30%; }
+
+/* 트레이너 */
+.trainer { position: absolute; bottom: 12%; left: 10%; width: 30%; max-width: 200px; z-index: 3; }
+.trainer svg { width: 100%; height: auto; }
+
+/* 야생 포켓몬 */
+.wild { position: absolute; top: 15%; right: 15%; width: 28%; max-width: 180px; z-index: 3; text-align: center; }
+.wild img { width: 100%; image-rendering: pixelated; }
+.wild.silhouette img { filter: brightness(0) opacity(0.7); }
+.wild.reveal img { animation: revealPkm 0.5s ease-out; }
+@keyframes revealPkm { 0% { transform: scale(0); opacity: 0; } 60% { transform: scale(1.2); } 100% { transform: scale(1); opacity: 1; } }
+.wild-label { font-size: clamp(1rem, 2vw, 1.5rem); margin-top: 10px; font-weight: bold; text-shadow: 2px 2px 0 white; }
+
+/* 제스처 예측 (좌측) */
+.ai-title { font-weight: bold; margin-bottom: 15px; border-bottom: 3px dashed #ccc; padding-bottom: 8px; font-size: 1.1em; }
+.gest-row { display: flex; align-items: center; gap: 8px; margin: 12px 0; }
+.gest-label { width: 100px; font-size: 1em; }
+.gest-bar { flex: 1; height: 16px; background: #ddd; border: 2px solid #999; }
+.gest-fill { height: 100%; width: 0%; transition: width 0.2s; }
+.gest-val { width: 50px; text-align: right; font-size: 1em; }
+
+/* 도감 (우측) */
+.dex-title { text-align: center; font-weight: bold; font-size: 1.2rem; margin-bottom: 15px; }
+.dex-grid { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.dex-cell {
+  width: 60px; height: 60px; 
+  background: rgba(0,0,0,0.05); border: 2px solid #ccc;
+  display: flex; align-items: center; justify-content: center;
+}
+.dex-cell.caught { background: white; border-color: #ffd700; box-shadow: inset 0 0 6px #ffd700; }
+.dex-sprite { width: 80%; height: 80%; image-rendering: pixelated; }
+.dex-sprite.uncaught { filter: grayscale(1) opacity(0.3); }
+.dex-emoji { font-size: 1.8rem; }
+
+/* 몬스터볼 애니메이션 */
+.pokeball { position: absolute; font-size: 40px; z-index: 10; opacity: 0; pointer-events: none; bottom: 20%; left: 20%; }
+.pokeball.throw { animation: throwArc 0.7s cubic-bezier(.3,.1,.5,1) forwards; }
+@keyframes throwArc {
+  0% { opacity: 1; transform: translate(0,0) scale(1) rotate(0); }
+  50% { transform: translate(150px, -100px) scale(1.5) rotate(360deg); }
+  100% { opacity: 0.8; transform: translate(300px, -150px) scale(1) rotate(720deg); }
+}
+.pokeball.drop { animation: ballDrop 0.3s ease-in forwards; }
+@keyframes ballDrop { 0% { opacity: 0.8; transform: translate(300px, -150px); } 100% { opacity: 1; transform: translate(300px, -110px) scale(0.8); } }
+.pokeball.shake { animation: ballShake 0.4s ease-in-out 3; }
+@keyframes ballShake { 0%,100% { transform: translate(300px, -110px) rotate(0); } 25% { transform: translate(300px, -110px) rotate(-20deg); } 75% { transform: translate(300px, -110px) rotate(20deg); } }
+
+/* 포획 섬광 */
+.flash { position: absolute; inset: 0; background: white; opacity: 0; z-index: 8; pointer-events: none; }
+.flash.active { animation: flashAnim 0.4s ease-out; }
+@keyframes flashAnim { 0% { opacity: 0.9; } 100% { opacity: 0; } }
+
+/* 텍스트 다이얼로그 박스 (하단) */
+.dialog {
+  width: 100%; max-width: 1400px;
+  background: var(--dialog-bg);
+  border: 6px solid white;
+  outline: 6px solid #6b7a8c;
+  border-radius: 12px;
+  padding: 25px 35px;
+  min-height: 120px;
+  display: flex; align-items: center;
+  box-shadow: 0 8px 16px rgba(0,0,0,0.5);
+}
+.dialog-text { color: var(--text-light); font-size: clamp(1.2rem, 2vw, 1.5rem); line-height: 1.6; text-shadow: 2px 2px 0 #000; }
+.dialog-text .hl { color: #f8d030; }
+
+/* 반응형 처리 (화면이 좁아지면 세로로 배치) */
+@media(max-width: 900px) {
+  .content-wrapper { flex-direction: column; align-items: center; }
+  .side-panel { width: 100%; max-width: 600px; }
+  .battle { width: 100%; max-width: 600px; }
 }
 </style>
 </head>
 <body>
 
 <div class="topbar">
-  <h1>POKe BALL</h1>
-  <div style="display:flex;align-items:center;gap:4px">
-    <div class="conn"><span class="dot" id="dot"></span><span id="connText">OFF</span></div>
+  <h1>포켓몬 조우/포획 게임</h1>
+  <div style="display:flex;align-items:center;gap:15px">
+    <div class="conn"><span class="dot" id="dot"></span><span id="connText">Off</span></div>
     <div class="cfg-bar">
-      <input id="host" value="192.168.0.30">
-      <input id="wsport" value="9001" style="width:35px">
-      <button onclick="doConnect()">GO</button>
+      <input id="host" value="192.168.0.30" placeholder="IP">
+      <input id="wsport" value="9001" placeholder="Port">
+      <button onclick="doConnect()">연결</button>
     </div>
   </div>
 </div>
 
-<div class="battle" id="battle">
-  <!-- AI panel (top-left, bigger) -->
-  <div class="ai-panel" id="aiPanel">
-    <div class="ai-title">AI STATUS</div>
-    <div id="gestBars" style="color:#888">Waiting...</div>
-    <div class="appear-section" id="appearSection" style="display:none">
-      <div class="appear-title">APPEARANCE</div>
-      <div id="appearArea"></div>
+<div class="content-wrapper">
+  <!-- 좌측 사이드 패널: 제스처 예측 창 -->
+  <div class="gba-panel side-panel" id="aiBubble">
+    <div class="ai-title">제스처 예측 중...</div>
+    <div id="gestBars" style="color:#666; font-size:1em; text-align:center; padding: 20px 0;">대기 중...</div>
+  </div>
+
+  <!-- 중앙: 배틀 화면 -->
+  <div class="battle" id="battle">
+    <div class="platform wild-plat"></div>
+    <div class="platform trainer-plat"></div>
+
+    <div class="wild silhouette" id="wildArea">
+      <img src="" alt="" id="wildImg" style="display:none">
+      <div id="wildPlaceholder" style="font-size:clamp(3rem, 6vw, 5rem); color:#777; margin-top:10%;">???</div>
+      <div class="wild-label" id="wildLabel">???</div>
     </div>
+
+    <div class="trainer">
+      <svg viewBox="0 0 16 16" style="width: 100%; image-rendering: pixelated; filter: drop-shadow(4px 4px 0 rgba(0,0,0,0.3));" shape-rendering="crispEdges">
+        <rect x="6" y="2" width="5" height="1" fill="#e53935"/>
+        <rect x="5" y="3" width="7" height="2" fill="#e53935"/>
+        <rect x="5" y="5" width="7" height="1" fill="#ffffff"/>
+        <rect x="5" y="6" width="7" height="1" fill="#212121"/>
+        <rect x="6" y="7" width="5" height="1" fill="#212121"/>
+        <rect x="7" y="8" width="3" height="1" fill="#ffccbc"/>
+        <rect x="6" y="9" width="5" height="5" fill="#e53935"/>
+        <rect x="5" y="9" width="1" height="4" fill="#ffffff"/>
+        <rect x="11" y="9" width="1" height="4" fill="#ffffff"/>
+        <rect x="3" y="7" width="3" height="6" fill="#fbc02d"/>
+        <rect x="4" y="6" width="2" height="1" fill="#fbc02d"/>
+        <rect x="6" y="14" width="2" height="2" fill="#1e88e5"/>
+        <rect x="9" y="14" width="2" height="2" fill="#1e88e5"/>
+      </svg>
+    </div>
+
+    <div class="pokeball" id="pokeball">🔴</div>
+    <div class="flash" id="flash"></div>
   </div>
 
-  <!-- Wild pokemon (top-right, LARGE) -->
-  <div class="wild silhouette" id="wildArea">
-    <img src="" alt="" id="wildImg" style="display:none">
-    <div id="wildPlaceholder" style="font-size:4rem;color:rgba(0,0,0,.5)">?</div>
-    <div class="wild-label" id="wildLabel"></div>
-  </div>
-
-  <!-- Trainer (bottom-left) -->
-  <div class="trainer">
-    <img src="trainer.png" alt="" id="trainerImg"
-         onerror="this.style.display='none';document.getElementById('trainerFallback').style.display='block'">
-    <div class="trainer-fallback" id="trainerFallback" style="display:none">🧑</div>
-  </div>
-
-  <!-- Pokedex (bottom-right, small) -->
-  <div class="dex-panel">
-    <div class="dex-title">POKeDEX</div>
+  <!-- 우측 사이드 패널: 도감 창 -->
+  <div class="gba-panel side-panel">
+    <div class="dex-title">포켓몬 도감 <span style="float:right;cursor:pointer;font-size:.7rem;color:#999" onclick="resetDex()" title="Reset">[초기화]</span></div>
     <div class="dex-grid" id="dexGrid"></div>
   </div>
-
-  <!-- Pokeball + flash -->
-  <div class="pokeball" id="pokeball">🔴</div>
-  <div class="flash" id="flash"></div>
 </div>
 
-<!-- Dialog box (GBA style) -->
+<!-- 하단 메시지 박스 -->
 <div class="dialog">
-  <div class="dialog-text" id="dialogText">보드를 흔들어 포켓몬을 탐색하세요.</div>
+  <div class="dialog-text" id="dialogText">보드를 흔들어 제스처를 예측하세요!<br>터치 센서를 누르면 포켓몬볼을 던집니다!</div>
 </div>
 
 <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 <script>
 // ---- Pokemon data ----
 const SPRITES={
-  'Pikachu':25,'Charmander':4,'Squirtle':7,'Ditto':132,
-  'Bulbasaur':1,'Charmeleon':5,'Wartortle':8,'Eevee':133,'Mew':151,
-};
-const POKEMON_EMOJI={
-  'Pikachu':'⚡','Charmander':'🔥','Squirtle':'🐢','Ditto':'🧬',
+  '피카츄':25, '파이리':4, '꼬부기':7, '메타몽':132,
+  '이상해씨':1, '리자드':5, '어니부기':8, '이브이':133, '뮤':151,
+  'Pikachu':25, 'Charmander':4, 'Squirtle':7, 'Ditto':132,
+  'Bulbasaur':1, 'Charmeleon':5, 'Wartortle':8, 'Eevee':133, 'Mew':151,
 };
 function spriteUrl(n){const id=SPRITES[n];return id?`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`:null;}
-function getEmoji(n){return POKEMON_EMOJI[n]||'⭐';}
+
+const GEST_COLORS = { 'LEFT': 'var(--c-left)', 'UP': 'var(--c-up)', 'RIGHT': 'var(--c-right)', 'DOWN': 'var(--c-down)', 'CIRCLE': 'var(--c-circle)' };
+const GEST_KOR = { 'LEFT':'왼쪽', 'UP':'위쪽', 'RIGHT':'오른쪽', 'DOWN':'아래쪽', 'CIRCLE':'원형' };
 
 // ---- State ----
-let client=null,config=null,caught=new Set();
-let webState='idle',gestLabels=null;
+let client=null, config=null, caught=new Set();
+let webState='idle', gestLabels=null;
 
 function loadCaught(){try{const s=localStorage.getItem('pokemon_caught');if(s)caught=new Set(JSON.parse(s));}catch(e){}}
 function saveCaught(){localStorage.setItem('pokemon_caught',JSON.stringify([...caught]));}
 function setDialog(html){document.getElementById('dialogText').innerHTML=html;}
-function getPokemonForGesture(g){
-  if(!config)return null;
-  const m=config.mappings.find(m=>m.gesture===g.toLowerCase());
-  return m?m.pokemon:null;
-}
 
-// ---- Render predict (gesture bars + appearance) ----
+// ---- Gesture bars ----
 function renderPredict(d){
-  const probs=d.probabilities||{};
-  const entries=Object.entries(probs).sort((a,b)=>b[1]-a[1]);
-  const top=d.topGesture||entries[0]?.[0]||'';
-  const topPct=entries.find(e=>e[0]===top)?.[1]||0;
-  const topPkm=getPokemonForGesture(top);
-
-  // Build gesture bars
-  const area=document.getElementById('gestBars');
-  if(!gestLabels||gestLabels.length!==entries.length){
-    gestLabels=entries.map(e=>e[0]);
-    area.innerHTML=entries.map(g=>`
+  const probs = d.probabilities || {};
+  const entries = Object.entries(probs).sort((a,b)=>b[1]-a[1]);
+  
+  const area = document.getElementById('gestBars');
+  if(!gestLabels || gestLabels.length !== entries.length){
+    gestLabels = entries.map(e=>e[0]);
+    area.innerHTML = entries.map(g => {
+      const gName = g[0].toUpperCase();
+      const korName = GEST_KOR[gName] || gName;
+      const color = GEST_COLORS[gName] || '#999';
+      return `
       <div class="gest-row" id="gr_${g[0]}">
-        <span class="gest-label">${g[0]}</span>
-        <div class="gest-bar"><div class="gest-fill" id="gf_${g[0]}" style="width:0%"></div></div>
+        <span class="gest-label">${korName} (${gName})</span>
+        <div class="gest-bar"><div class="gest-fill" id="gf_${g[0]}" style="background:${color}; width:0%"></div></div>
         <span class="gest-val" id="gv_${g[0]}">0%</span>
-      </div>`).join('');
+      </div>`;
+    }).join('');
   }
+  
   entries.forEach(([g,v])=>{
-    const f=document.getElementById('gf_'+g);const t=document.getElementById('gv_'+g);
-    const r=document.getElementById('gr_'+g);
-    if(f)f.style.width=v+'%';if(t)t.textContent=v+'%';
-    if(r)r.classList.toggle('top',g===top);
+    const f = document.getElementById('gf_'+g);
+    const t = document.getElementById('gv_'+g);
+    if(f) f.style.width = v + '%';
+    if(t) t.textContent = v + '%';
   });
 
-  // Appearance probability section
-  const appearSection=document.getElementById('appearSection');
-  const appearArea=document.getElementById('appearArea');
-  appearSection.style.display='block';
-  const hp=config?(config.hiddenProb||2):2;
-  let html='';
-  // Top pokemon
-  if(topPkm){
-    html+=`<div class="appear-row top"><span>${getEmoji(topPkm)} ${topPkm}</span><span class="appear-val">${topPct}%</span></div>`;
-  }
-  // Other pokemon (non-top, non-idle gestures)
-  entries.forEach(([g,v])=>{
-    if(g===top)return;
-    const pkm=getPokemonForGesture(g);
-    if(pkm){
-      html+=`<div class="appear-row"><span>${getEmoji(pkm)} ${pkm}</span><span class="appear-val">${v}%</span></div>`;
-    }
-  });
-  // Sanjini
-  html+=`<div class="appear-row hidden-row"><span>🌟 ${config?config.hidden:'Sanjini'}</span><span class="appear-val">${hp}%</span></div>`;
-  appearArea.innerHTML=html;
-
-  // Dialog
-  if(webState==='idle'||webState==='sensing'){
+  // 야생의 ~가 나타났다 문구 삭제
+  if(webState==='idle' || webState==='sensing'){
     webState='sensing';
-    if(topPkm && topPct>20){
-      setDialog(`Touch Sensor를 눌러 몬스터볼을 던지세요.`);
-    }else{
-      setDialog(`제스처를 분석 중... <span class="hl">${top}</span> ${topPct}%`);
-    }
+    setDialog('보드를 흔들어 제스처를 예측하세요!<br>터치 센서를 누르면 포켓몬볼을 던집니다!');
   }
 }
 
-// ---- Catch animation ----
-function playCaptureAnim(pokemon,isHidden){
-  webState='catching';
-  setDialog('가랏! <span class="hl">몬스터볼!</span>');
+// ---- Catch animation sequence ----
+function playCaptureAnim(pokemon, isHidden){
+  webState = 'catching';
+  setDialog('가랏!<br><span class="hl">포켓몬볼!</span>');
 
-  const ball=document.getElementById('pokeball');
-  ball.className='pokeball throw';
+  const ball = document.getElementById('pokeball');
+  ball.className = 'pokeball throw';
   void ball.offsetWidth;
 
-  setTimeout(()=>{ball.className='pokeball drop';setDialog('...');},700);
-  setTimeout(()=>{ball.className='pokeball shake';},1000);
+  setTimeout(()=>{
+    ball.className = 'pokeball drop';
+    setDialog('... (흔들리는 중)');
+  }, 700);
+  
+  setTimeout(()=>{
+    ball.className = 'pokeball shake';
+  }, 1000);
 
   setTimeout(()=>{
-    const flash=document.getElementById('flash');
-    flash.classList.remove('active');void flash.offsetWidth;flash.classList.add('active');
-    ball.style.opacity='0';
+    const flash = document.getElementById('flash');
+    flash.classList.remove('active'); void flash.offsetWidth; flash.classList.add('active');
+    ball.style.opacity = '0';
 
-    const wild=document.getElementById('wildArea');
-    wild.className='wild reveal';
-    const img=document.getElementById('wildImg');
-    const ph=document.getElementById('wildPlaceholder');
-    const label=document.getElementById('wildLabel');
-    const url=spriteUrl(pokemon);
-    if(url){img.src=url;img.style.display='block';ph.style.display='none';}
-    else{ph.style.display='block';ph.textContent='🌟';ph.style.fontSize='4rem';}
-    label.textContent=pokemon;
-    label.style.fontWeight='bold';
-    label.style.color=isHidden?'#ce93d8':'#fff';
+    const wild = document.getElementById('wildArea');
+    wild.className = 'wild reveal';
+    const img = document.getElementById('wildImg');
+    const ph = document.getElementById('wildPlaceholder');
+    const label = document.getElementById('wildLabel');
+    
+    const url = spriteUrl(pokemon);
+    if(url){
+      img.src = url; img.style.display = 'block'; ph.style.display = 'none';
+    } else {
+      ph.style.display = 'block'; ph.textContent = isHidden ? '🌟' : '❓';
+    }
+    
+    label.textContent = pokemon;
+    label.style.color = isHidden ? '#E91E63' : '#fff';
 
-    if(isHidden) setDialog(`Gotcha!<br><span class="hidden-text">산지니를 획득했다!</span>`);
-    else setDialog(`Gotcha!<br><span class="pk">${pokemon}</span> was caught!`);
-  },2200);
+    setDialog(`잡았다!<br><span class="hl">${pokemon}</span>(을)를 잡았다!`);
+  }, 2200);
 
-  setTimeout(()=>resetBattle(),6000);
+  setTimeout(() => resetBattle(), 6000);
+}
+
+function resetDex(){
+  if(!confirm('도감을 초기화할까요?'))return;
+  caught.clear();saveCaught();renderDex();
 }
 
 function resetBattle(){
-  webState='idle';
-  const wild=document.getElementById('wildArea');
-  wild.className='wild silhouette';
-  document.getElementById('wildImg').style.display='none';
-  const ph=document.getElementById('wildPlaceholder');
-  ph.style.display='block';ph.style.fontSize='4rem';ph.style.color='rgba(0,0,0,.5)';ph.textContent='?';
-  document.getElementById('wildLabel').textContent='';
-  document.getElementById('pokeball').className='pokeball';
-  setDialog('보드를 흔들어 포켓몬을 탐색하세요.');
+  webState = 'idle';
+  const wild = document.getElementById('wildArea');
+  wild.className = 'wild silhouette';
+  document.getElementById('wildImg').style.display = 'none';
+  
+  const ph = document.getElementById('wildPlaceholder');
+  ph.style.display = 'block'; ph.textContent = '???'; ph.style.color = '#777';
+  
+  document.getElementById('wildLabel').textContent = '???';
+  document.getElementById('pokeball').className = 'pokeball';
+  
+  setDialog('보드를 흔들어 제스처를 예측하세요!<br>터치 센서를 누르면 포켓몬볼을 던집니다!');
 }
 
-// ---- Pokedex (emoji thumbnails, no images) ----
+// ---- Pokedex ----
 function renderDex(){
-  if(!config)return;
-  const grid=document.getElementById('dexGrid');
-  grid.innerHTML='';
-  config.mappings.forEach(m=>{
-    const isCaught=caught.has(m.pokemon);
-    const el=document.createElement('div');
-    el.className='dex-cell'+(isCaught?' caught':'');
-    el.innerHTML=`<div class="dex-emoji" style="${isCaught?'':'filter:grayscale(1) opacity(.35)'}">${getEmoji(m.pokemon)}</div>`
-      +`<div class="dex-name">${isCaught?m.pokemon:'???'}</div>`;
+  if(!config) return;
+  const grid = document.getElementById('dexGrid');
+  grid.innerHTML = '';
+  
+  config.mappings.forEach(m => {
+    const isCaught = caught.has(m.pokemon);
+    const url = spriteUrl(m.pokemon);
+    const el = document.createElement('div');
+    el.className = 'dex-cell' + (isCaught ? ' caught' : '');
+    
+    if(url) {
+      el.innerHTML = `<img class="dex-sprite ${isCaught ? '' : 'uncaught'}" src="${url}" title="${isCaught ? m.pokemon : '???'}">`;
+    } else {
+      el.innerHTML = `<div class="dex-emoji">${isCaught ? '✅' : '❓'}</div>`;
+    }
     grid.appendChild(el);
   });
-  // Hidden
-  const hCaught=caught.has(config.hidden);
-  const hEl=document.createElement('div');
-  hEl.className='dex-cell hidden-cell'+(hCaught?' caught':'');
-  hEl.innerHTML=`<div class="dex-emoji">${hCaught?'🌟':'❓'}</div>`
-    +`<div class="dex-name" style="color:${hCaught?'var(--purple)':'#999'}">${hCaught?config.hidden:'???'}</div>`;
+  
+  const hCaught = caught.has(config.hidden);
+  const hEl = document.createElement('div');
+  hEl.className = 'dex-cell' + (hCaught ? ' caught' : '');
+  hEl.innerHTML = hCaught ? '<div class="dex-emoji" title="산지니">🌟</div>' : '<div class="dex-emoji" title="???">🔒</div>';
   grid.appendChild(hEl);
 }
 
 // ---- Connection ----
 function setConnected(on){
-  document.getElementById('dot').classList.toggle('on',on);
-  document.getElementById('connText').textContent=on?'ON':'OFF';
+  document.getElementById('dot').classList.toggle('on', on);
+  document.getElementById('connText').textContent = on ? 'On' : 'Off';
 }
 
 function doConnect(){
-  if(client){client.end();client=null;}
-  const h=document.getElementById('host').value.trim();
-  const p=parseInt(document.getElementById('wsport').value)||9001;
-  client=mqtt.connect(`ws://${h}:${p}`,{clientId:'pkb_'+Math.random().toString(16).slice(2,8)});
-  client.on('connect',()=>{
+  if(client){client.end(); client=null;}
+  const h = document.getElementById('host').value.trim();
+  const p = parseInt(document.getElementById('wsport').value) || 9001;
+  
+  client = mqtt.connect(`ws://${h}:${p}`, {clientId:'pkb_'+Math.random().toString(16).slice(2,8)});
+  
+  client.on('connect', ()=>{
     setConnected(true);
-    client.subscribe(['pokemon/config','pokemon/predict','pokemon/capture']);
+    client.subscribe(['pokemon/config', 'pokemon/predict', 'pokemon/capture']);
+    // 임시 테스트 데이터
+    if(!config) {
+      config = {
+        mappings: [
+          {gesture:'left', pokemon:'피카츄'}, {gesture:'up', pokemon:'꼬부기'},
+          {gesture:'right', pokemon:'파이리'}, {gesture:'down', pokemon:'이상해씨'},
+          {gesture:'circle', pokemon:'이브이'}
+        ],
+        hidden: '산지니'
+      };
+      renderDex();
+    }
   });
-  client.on('close',()=>setConnected(false));
-  client.on('error',e=>console.error(e));
-  client.on('message',(topic,msg)=>{
-    const str=msg.toString();let d;try{d=JSON.parse(str);}catch(e){return;}
-    if(topic==='pokemon/config'){config=d;renderDex();}
-    else if(topic==='pokemon/predict'){if(webState!=='catching')renderPredict(d);}
-    else if(topic==='pokemon/capture'){
-      playCaptureAnim(d.pokemon,d.hidden);
-      if(d.pokemon){caught.add(d.pokemon);saveCaught();renderDex();}
+  
+  client.on('close', ()=>setConnected(false));
+  client.on('error', e=>console.error(e));
+  client.on('message', (topic,msg)=>{
+    const str = msg.toString(); let d; try{d=JSON.parse(str);}catch(e){return;}
+    if(topic === 'pokemon/config'){ config=d; renderDex(); }
+    else if(topic === 'pokemon/predict'){ if(webState!=='catching') renderPredict(d); }
+    else if(topic === 'pokemon/capture'){
+      playCaptureAnim(d.pokemon, d.hidden);
+      if(d.pokemon){ caught.add(d.pokemon); saveCaught(); renderDex(); }
     }
   });
 }
 
 loadCaught();
-window.addEventListener('load',()=>doConnect());
+window.addEventListener('load', ()=>doConnect());
 </script>
 </body>
 </html>

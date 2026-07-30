@@ -2,12 +2,11 @@
  * game.cpp — Central state machine.
  *
  * Flow:
- *   IDLE     → pokeball, continuous inference + score publishing, poll for shake
- *   SENSING  → pokeball "TOUCH!", continuous inference + score publishing,
- *              wait for touch (no timeout — keep sensing until user taps)
+ *   IDLE     → pokeball, continuous inference + score publishing
+ *   SENSING  → pokeball "TOUCH!", auto-reveal after 2s sensing window
  *   REVEALED → pokemon (or Sanjini), auto-return to IDLE after 5 s
  *
- * On touch: grab current best non-idle gesture → reveal pokemon.
+ * Touch: IDLE → SENSING (tap to start), SENSING → REVEALED (tap to skip wait).
  */
 #include "game.h"
 #include "config.h"
@@ -24,12 +23,11 @@ enum class State {
 
 static State         state         = State::IDLE;
 static unsigned long stateEnterMs  = 0;
-static unsigned long lastShakePoll = 0;
 static unsigned long lastScorePub  = 0;
 
 static GestureResult pendingGesture;
 
-#define SCORE_PUB_MS 250
+#define SCORE_PUB_MS 500   // publish scores every 500 ms (match inference rate)
 
 // -----------------------------------------------------------------------
 // Helpers
@@ -118,10 +116,29 @@ void gameInit() {
 }
 
 void gameLoop() {
+    // 1. Sample IMU (fast, non-blocking)
     gesturePoll();
+
     unsigned long now = millis();
 
-    // Publish real-time scores in IDLE and SENSING
+    // 2. Check touch FIRST (before any blocking inference/MQTT)
+    if (state == State::SENSING && touchTapped()) {
+        Serial.println(F("[GAME] touch! revealing..."));
+        pendingGesture = gestureGetResult();
+        reveal();
+        enterState(State::REVEALED);
+        return;   // skip everything else this iteration
+    }
+    if (state == State::REVEALED && now - stateEnterMs >= 3000 && touchTapped()) {
+        displayPokeball(false);
+        enterState(State::IDLE);
+        return;
+    }
+
+    // 3. Run inference (blocking ~50ms, only if no touch)
+    gesturePollInfer();
+
+    // 4. Publish real-time scores in IDLE and SENSING
     if ((state == State::IDLE || state == State::SENSING) &&
         now - lastScorePub >= SCORE_PUB_MS) {
         lastScorePub = now;
@@ -132,23 +149,18 @@ void gameLoop() {
 
     // -------------------------------------------------- IDLE
     case State::IDLE: {
-        if (now - lastShakePoll >= SHAKE_CHECK_MS) {
-            lastShakePoll = now;
-            if (gesturePollShake()) {
-                Serial.println(F("[GAME] shake! sensing + waiting touch..."));
-                displayPokeball(true);   // "TOUCH!" hint
-                enterState(State::SENSING);
-            }
+        if (touchTapped()) {
+            Serial.println(F("[GAME] tap! sensing..."));
+            displayPokeball(true);
+            enterState(State::SENSING);
         }
         break;
     }
 
     // -------------------------------------------------- SENSING
-    // Keep sensing + publishing scores until touch.
-    // No timeout — user can shake as long as they want.
     case State::SENSING: {
-        if (touchTapped()) {
-            Serial.println(F("[GAME] touch! revealing..."));
+        // Auto-reveal after sensing window
+        if (now - stateEnterMs >= 2000) {
             pendingGesture = gestureGetResult();
             reveal();
             enterState(State::REVEALED);
@@ -159,10 +171,6 @@ void gameLoop() {
     // -------------------------------------------------- REVEALED
     case State::REVEALED: {
         if (now - stateEnterMs >= REVEAL_DISPLAY_MS) {
-            displayPokeball(false);
-            enterState(State::IDLE);
-        }
-        if (now - stateEnterMs >= 3000 && touchTapped()) {
             displayPokeball(false);
             enterState(State::IDLE);
         }
