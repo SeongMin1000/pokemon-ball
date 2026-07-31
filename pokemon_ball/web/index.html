@@ -1,444 +1,128 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Pokemon Ball Dashboard</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/neodgm/neodgm-webfont@latest/neodgm/style.css">
-<style>
-* { box-sizing: border-box; margin: 0; padding: 0; }
-:root {
-  --bg-color: #d0d8c8;
-  --platform-color: #a8b8a0;
-  --panel-bg: #f8f8d8;
-  --panel-border: #282828;
-  --dialog-bg: #2a3240;
-  --text-dark: #282828;
-  --text-light: #ffffff;
-  
-  --c-left: #2196F3;
-  --c-up: #4CAF50;
-  --c-right: #FF9800;
-  --c-down: #9C27B0;
-  --c-circle: #E91E63;
-}
-
-body {
-  font-family: 'DungGeunMo', 'Segoe UI', sans-serif;
-  background: #1a1a1a;
-  color: var(--text-dark);
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 2vh 2vw;
-  gap: 15px;
-}
-
-/* 상단 연결 바 */
-.topbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
-  max-width: 1400px;
-  color: white;
-}
-.topbar h1 { font-size: clamp(1.2rem, 3vw, 2rem); color: #ffcb05; text-shadow: 2px 2px 0 #2a75bb; }
-.conn { display: flex; align-items: center; gap: 8px; font-size: 1rem; }
-.dot { width: 14px; height: 14px; border-radius: 50%; background: #f44336; }
-.dot.on { background: #4caf50; box-shadow: 0 0 8px #4caf50; }
-.cfg-bar { display: flex; gap: 6px; }
-.cfg-bar input {
-  background: white; border: 2px solid #555; font-family: 'DungGeunMo';
-  padding: 6px; font-size: 1rem; width: 120px;
-}
-.cfg-bar input#wsport { width: 70px; }
-.cfg-bar button {
-  background: #e53935; color: white; border: 2px solid white;
-  padding: 6px 15px; cursor: pointer; font-family: 'DungGeunMo'; font-size: 1rem;
-}
-
-/* 중앙 콘텐츠 래퍼 (좌측 UI + 배틀 화면 + 우측 UI) */
-.content-wrapper {
-  display: flex;
-  width: 100%;
-  max-width: 1400px;
-  gap: 20px;
-  justify-content: center;
-  align-items: stretch;
-}
-
-/* UI 패널 공통 */
-.gba-panel {
-  background: var(--panel-bg);
-  border: 4px solid var(--panel-border);
-  border-radius: 8px;
-  box-shadow: 4px 4px 0 rgba(0,0,0,0.2);
-  padding: 15px;
-}
-
-/* 좌/우 사이드 패널 */
-.side-panel {
-  flex: 1;
-  min-width: 250px;
-  max-width: 350px;
-  display: flex;
-  flex-direction: column;
-}
-
-/* 배틀 화면 */
-.battle {
-  position: relative;
-  flex: 2;
-  min-width: 300px;
-  aspect-ratio: 4/3;
-  background-color: var(--bg-color);
-  border: 6px solid var(--panel-border);
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.6);
-}
-
-/* 배틀 플랫폼 */
-.platform { position: absolute; background: var(--platform-color); border-radius: 50%; z-index: 1; }
-.platform.wild-plat { top: 35%; right: 5%; width: 50%; height: 25%; }
-.platform.trainer-plat { bottom: 10%; left: -5%; width: 60%; height: 30%; }
-
-/* 트레이너 */
-.trainer { position: absolute; bottom: 12%; left: 10%; width: 30%; max-width: 200px; z-index: 3; }
-.trainer svg { width: 100%; height: auto; }
-
-/* 야생 포켓몬 */
-.wild { position: absolute; top: 15%; right: 15%; width: 28%; max-width: 180px; z-index: 3; text-align: center; }
-.wild img { width: 100%; image-rendering: pixelated; }
-.wild.silhouette img { filter: brightness(0) opacity(0.7); }
-.wild.reveal img { animation: revealPkm 0.5s ease-out; }
-@keyframes revealPkm { 0% { transform: scale(0); opacity: 0; } 60% { transform: scale(1.2); } 100% { transform: scale(1); opacity: 1; } }
-.wild-label { font-size: clamp(1rem, 2vw, 1.5rem); margin-top: 10px; font-weight: bold; text-shadow: 2px 2px 0 white; }
-
-/* 제스처 예측 (좌측) */
-.ai-title { font-weight: bold; margin-bottom: 15px; border-bottom: 3px dashed #ccc; padding-bottom: 8px; font-size: 1.1em; }
-.gest-row { display: flex; align-items: center; gap: 8px; margin: 12px 0; }
-.gest-label { width: 100px; font-size: 1em; }
-.gest-bar { flex: 1; height: 16px; background: #ddd; border: 2px solid #999; }
-.gest-fill { height: 100%; width: 0%; transition: width 0.2s; }
-.gest-val { width: 50px; text-align: right; font-size: 1em; }
-
-/* 도감 (우측) */
-.dex-title { text-align: center; font-weight: bold; font-size: 1.2rem; margin-bottom: 15px; }
-.dex-grid { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
-.dex-cell {
-  width: 60px; height: 60px; 
-  background: rgba(0,0,0,0.05); border: 2px solid #ccc;
-  display: flex; align-items: center; justify-content: center;
-}
-.dex-cell.caught { background: white; border-color: #ffd700; box-shadow: inset 0 0 6px #ffd700; }
-.dex-sprite { width: 80%; height: 80%; image-rendering: pixelated; }
-.dex-sprite.uncaught { filter: grayscale(1) opacity(0.3); }
-.dex-emoji { font-size: 1.8rem; }
-
-/* 몬스터볼 애니메이션 */
-.pokeball { position: absolute; font-size: 40px; z-index: 10; opacity: 0; pointer-events: none; bottom: 20%; left: 20%; }
-.pokeball.throw { animation: throwArc 0.7s cubic-bezier(.3,.1,.5,1) forwards; }
-@keyframes throwArc {
-  0% { opacity: 1; transform: translate(0,0) scale(1) rotate(0); }
-  50% { transform: translate(150px, -100px) scale(1.5) rotate(360deg); }
-  100% { opacity: 0.8; transform: translate(300px, -150px) scale(1) rotate(720deg); }
-}
-.pokeball.drop { animation: ballDrop 0.3s ease-in forwards; }
-@keyframes ballDrop { 0% { opacity: 0.8; transform: translate(300px, -150px); } 100% { opacity: 1; transform: translate(300px, -110px) scale(0.8); } }
-.pokeball.shake { animation: ballShake 0.4s ease-in-out 3; }
-@keyframes ballShake { 0%,100% { transform: translate(300px, -110px) rotate(0); } 25% { transform: translate(300px, -110px) rotate(-20deg); } 75% { transform: translate(300px, -110px) rotate(20deg); } }
-
-/* 포획 섬광 */
-.flash { position: absolute; inset: 0; background: white; opacity: 0; z-index: 8; pointer-events: none; }
-.flash.active { animation: flashAnim 0.4s ease-out; }
-@keyframes flashAnim { 0% { opacity: 0.9; } 100% { opacity: 0; } }
-
-/* 텍스트 다이얼로그 박스 (하단) */
-.dialog {
-  width: 100%; max-width: 1400px;
-  background: var(--dialog-bg);
-  border: 6px solid white;
-  outline: 6px solid #6b7a8c;
-  border-radius: 12px;
-  padding: 25px 35px;
-  min-height: 120px;
-  display: flex; align-items: center;
-  box-shadow: 0 8px 16px rgba(0,0,0,0.5);
-}
-.dialog-text { color: var(--text-light); font-size: clamp(1.2rem, 2vw, 1.5rem); line-height: 1.6; text-shadow: 2px 2px 0 #000; }
-.dialog-text .hl { color: #f8d030; }
-
-/* 반응형 처리 (화면이 좁아지면 세로로 배치) */
-@media(max-width: 900px) {
-  .content-wrapper { flex-direction: column; align-items: center; }
-  .side-panel { width: 100%; max-width: 600px; }
-  .battle { width: 100%; max-width: 600px; }
-}
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ESP32-S3 TinyML AI Pokemon Capsule Arena</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<div class="topbar">
-  <h1>포켓몬 조우/포획 게임</h1>
-  <div style="display:flex;align-items:center;gap:15px">
-    <div class="conn"><span class="dot" id="dot"></span><span id="connText">Off</span></div>
-    <div class="cfg-bar">
-      <input id="host" value="192.168.0.30" placeholder="IP">
-      <input id="wsport" value="9001" placeholder="Port">
-      <button onclick="doConnect()">연결</button>
-    </div>
-  </div>
-</div>
-
-<div class="content-wrapper">
-  <!-- 좌측 사이드 패널: 제스처 예측 창 -->
-  <div class="gba-panel side-panel" id="aiBubble">
-    <div class="ai-title">제스처 예측 중...</div>
-    <div id="gestBars" style="color:#666; font-size:1em; text-align:center; padding: 20px 0;">대기 중...</div>
-  </div>
-
-  <!-- 중앙: 배틀 화면 -->
-  <div class="battle" id="battle">
-    <div class="platform wild-plat"></div>
-    <div class="platform trainer-plat"></div>
-
-    <div class="wild silhouette" id="wildArea">
-      <img src="" alt="" id="wildImg" style="display:none">
-      <div id="wildPlaceholder" style="font-size:clamp(3rem, 6vw, 5rem); color:#777; margin-top:10%;">???</div>
-      <div class="wild-label" id="wildLabel">???</div>
-    </div>
-
-    <div class="trainer">
-      <svg viewBox="0 0 16 16" style="width: 100%; image-rendering: pixelated; filter: drop-shadow(4px 4px 0 rgba(0,0,0,0.3));" shape-rendering="crispEdges">
-        <rect x="6" y="2" width="5" height="1" fill="#e53935"/>
-        <rect x="5" y="3" width="7" height="2" fill="#e53935"/>
-        <rect x="5" y="5" width="7" height="1" fill="#ffffff"/>
-        <rect x="5" y="6" width="7" height="1" fill="#212121"/>
-        <rect x="6" y="7" width="5" height="1" fill="#212121"/>
-        <rect x="7" y="8" width="3" height="1" fill="#ffccbc"/>
-        <rect x="6" y="9" width="5" height="5" fill="#e53935"/>
-        <rect x="5" y="9" width="1" height="4" fill="#ffffff"/>
-        <rect x="11" y="9" width="1" height="4" fill="#ffffff"/>
-        <rect x="3" y="7" width="3" height="6" fill="#fbc02d"/>
-        <rect x="4" y="6" width="2" height="1" fill="#fbc02d"/>
-        <rect x="6" y="14" width="2" height="2" fill="#1e88e5"/>
-        <rect x="9" y="14" width="2" height="2" fill="#1e88e5"/>
-      </svg>
-    </div>
-
-    <div class="pokeball" id="pokeball">🔴</div>
-    <div class="flash" id="flash"></div>
-  </div>
-
-  <!-- 우측 사이드 패널: 도감 창 -->
-  <div class="gba-panel side-panel">
-    <div class="dex-title">포켓몬 도감 <span style="float:right;cursor:pointer;font-size:.7rem;color:#999" onclick="resetDex()" title="Reset">[초기화]</span></div>
-    <div class="dex-grid" id="dexGrid"></div>
-  </div>
-</div>
-
-<!-- 하단 메시지 박스 -->
-<div class="dialog">
-  <div class="dialog-text" id="dialogText">보드를 흔들어 제스처를 예측하세요!<br>터치 센서를 누르면 포켓몬볼을 던집니다!</div>
-</div>
-
-<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
-<script>
-// ---- Pokemon data ----
-const SPRITES={
-  '피카츄':25, '파이리':4, '꼬부기':7, '메타몽':132,
-  '이상해씨':1, '리자드':5, '어니부기':8, '이브이':133, '뮤':151,
-  'Pikachu':25, 'Charmander':4, 'Squirtle':7, 'Ditto':132,
-  'Bulbasaur':1, 'Charmeleon':5, 'Wartortle':8, 'Eevee':133, 'Mew':151,
-};
-function spriteUrl(n){const id=SPRITES[n];return id?`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`:null;}
-
-const GEST_COLORS = { 'LEFT': 'var(--c-left)', 'UP': 'var(--c-up)', 'RIGHT': 'var(--c-right)', 'DOWN': 'var(--c-down)', 'CIRCLE': 'var(--c-circle)' };
-const GEST_KOR = { 'LEFT':'왼쪽', 'UP':'위쪽', 'RIGHT':'오른쪽', 'DOWN':'아래쪽', 'CIRCLE':'원형' };
-
-// ---- State ----
-let client=null, config=null, caught=new Set();
-let webState='idle', gestLabels=null;
-
-function loadCaught(){try{const s=localStorage.getItem('pokemon_caught');if(s)caught=new Set(JSON.parse(s));}catch(e){}}
-function saveCaught(){localStorage.setItem('pokemon_caught',JSON.stringify([...caught]));}
-function setDialog(html){document.getElementById('dialogText').innerHTML=html;}
-
-// ---- Gesture bars ----
-function renderPredict(d){
-  const probs = d.probabilities || {};
-  const entries = Object.entries(probs).sort((a,b)=>b[1]-a[1]);
-  
-  const area = document.getElementById('gestBars');
-  if(!gestLabels || gestLabels.length !== entries.length){
-    gestLabels = entries.map(e=>e[0]);
-    area.innerHTML = entries.map(g => {
-      const gName = g[0].toUpperCase();
-      const korName = GEST_KOR[gName] || gName;
-      const color = GEST_COLORS[gName] || '#999';
-      return `
-      <div class="gest-row" id="gr_${g[0]}">
-        <span class="gest-label">${korName} (${gName})</span>
-        <div class="gest-bar"><div class="gest-fill" id="gf_${g[0]}" style="background:${color}; width:0%"></div></div>
-        <span class="gest-val" id="gv_${g[0]}">0%</span>
-      </div>`;
-    }).join('');
-  }
-  
-  entries.forEach(([g,v])=>{
-    const f = document.getElementById('gf_'+g);
-    const t = document.getElementById('gv_'+g);
-    if(f) f.style.width = v + '%';
-    if(t) t.textContent = v + '%';
-  });
-
-  // 야생의 ~가 나타났다 문구 삭제
-  if(webState==='idle' || webState==='sensing'){
-    webState='sensing';
-    setDialog('보드를 흔들어 제스처를 예측하세요!<br>터치 센서를 누르면 포켓몬볼을 던집니다!');
-  }
-}
-
-// ---- Catch animation sequence ----
-function playCaptureAnim(pokemon, isHidden){
-  webState = 'catching';
-  setDialog('가랏!<br><span class="hl">포켓몬볼!</span>');
-
-  const ball = document.getElementById('pokeball');
-  ball.className = 'pokeball throw';
-  void ball.offsetWidth;
-
-  setTimeout(()=>{
-    ball.className = 'pokeball drop';
-    setDialog('... (흔들리는 중)');
-  }, 700);
-  
-  setTimeout(()=>{
-    ball.className = 'pokeball shake';
-  }, 1000);
-
-  setTimeout(()=>{
-    const flash = document.getElementById('flash');
-    flash.classList.remove('active'); void flash.offsetWidth; flash.classList.add('active');
-    ball.style.opacity = '0';
-
-    const wild = document.getElementById('wildArea');
-    wild.className = 'wild reveal';
-    const img = document.getElementById('wildImg');
-    const ph = document.getElementById('wildPlaceholder');
-    const label = document.getElementById('wildLabel');
+  <!-- Full Screen Battle Arena Container -->
+  <div class="arena-container">
     
-    const url = spriteUrl(pokemon);
-    if(url){
-      img.src = url; img.style.display = 'block'; ph.style.display = 'none';
-    } else {
-      ph.style.display = 'block'; ph.textContent = isHidden ? '🌟' : '❓';
-    }
-    
-    label.textContent = pokemon;
-    label.style.color = isHidden ? '#E91E63' : '#fff';
+    <!-- Top Header & Connection Control Bar -->
+    <header class="top-header">
+      <div class="brand-title">
+        <h1>🔴 AI POKÉMON CAPSULE</h1>
+        <span class="badge-tag">GBA ARENA</span>
+      </div>
 
-    setDialog(`잡았다!<br><span class="hl">${pokemon}</span>(을)를 잡았다!`);
-  }, 2200);
+      <div class="connection-controls">
+        <div class="status-indicator">
+          <span class="status-dot" id="mqttStatusDot"></span>
+          <span id="mqttStatusText">오프라인</span>
+        </div>
 
-  setTimeout(() => resetBattle(), 6000);
-}
+        <div class="config-inputs">
+          <input type="text" id="mqttHost" value="localhost" placeholder="IP / Host">
+          <input type="text" id="mqttPort" value="9001" placeholder="Port">
+          <button class="btn-retro" id="btnConnect">연결</button>
+          <button class="btn-retro btn-demo" id="btnDemoCapture" title="하드웨어 연결 없이 브라우저에서 포획 애니메이션을 테스트합니다.">⚡ 데모 시뮬레이션</button>
+        </div>
+      </div>
+    </header>
 
-function resetDex(){
-  if(!confirm('도감을 초기화할까요?'))return;
-  caught.clear();saveCaught();renderDex();
-}
+    <!-- Maximized Battle Stage Layout -->
+    <main class="battle-stage">
+      
+      <!-- [중앙 및 좌측 전체] Battle Arena View -->
+      <section class="arena-view" id="battleArenaView">
+        <div class="cloud-bg"></div>
 
-function resetBattle(){
-  webState = 'idle';
-  const wild = document.getElementById('wildArea');
-  wild.className = 'wild silhouette';
-  document.getElementById('wildImg').style.display = 'none';
-  
-  const ph = document.getElementById('wildPlaceholder');
-  ph.style.display = 'block'; ph.textContent = '???'; ph.style.color = '#777';
-  
-  document.getElementById('wildLabel').textContent = '???';
-  document.getElementById('pokeball').className = 'pokeball';
-  
-  setDialog('보드를 흔들어 제스처를 예측하세요!<br>터치 센서를 누르면 포켓몬볼을 던집니다!');
-}
+        <!-- [좌측 상단] In-Arena AI Prediction Box (replaces old HP box) -->
+        <div class="in-arena-ai-box">
+          <div class="ai-box-header">
+            <span class="ai-box-title">🧠 AI Prediction</span>
+            <span class="active-gest-badge" id="activeGestureBadge">대기 중</span>
+          </div>
+          <div class="ai-box-confidence-list" id="confidenceList">
+            <!-- Dynamic Mini Progress Bars Rendered via script.js -->
+          </div>
+        </div>
 
-// ---- Pokedex ----
-function renderDex(){
-  if(!config) return;
-  const grid = document.getElementById('dexGrid');
-  grid.innerHTML = '';
-  
-  config.mappings.forEach(m => {
-    const isCaught = caught.has(m.pokemon);
-    const url = spriteUrl(m.pokemon);
-    const el = document.createElement('div');
-    el.className = 'dex-cell' + (isCaught ? ' caught' : '');
-    
-    if(url) {
-      el.innerHTML = `<img class="dex-sprite ${isCaught ? '' : 'uncaught'}" src="${url}" title="${isCaught ? m.pokemon : '???'}">`;
-    } else {
-      el.innerHTML = `<div class="dex-emoji">${isCaught ? '✅' : '❓'}</div>`;
-    }
-    grid.appendChild(el);
-  });
-  
-  const hCaught = caught.has(config.hidden);
-  const hEl = document.createElement('div');
-  hEl.className = 'dex-cell' + (hCaught ? ' caught' : '');
-  hEl.innerHTML = hCaught ? '<div class="dex-emoji" title="산지니">🌟</div>' : '<div class="dex-emoji" title="???">🔒</div>';
-  grid.appendChild(hEl);
-}
+        <!-- Wild Pokemon Platform (Top-Right) -->
+        <div class="platform platform-wild"></div>
 
-// ---- Connection ----
-function setConnected(on){
-  document.getElementById('dot').classList.toggle('on', on);
-  document.getElementById('connText').textContent = on ? 'On' : 'Off';
-}
+        <!-- Wild Enemy Pokemon Zone (Dual Layer for Smooth Silhouette Cross-Fade) -->
+        <div class="enemy-zone">
+          <div class="pokemon-sprite-container">
+            <img class="pkm-layer pkm-silhouette" id="enemySilhouetteImg" src="" alt="Wild Silhouette">
+            <img class="pkm-layer pkm-actual" id="enemyActualImg" src="" alt="Wild Pokemon">
+          </div>
+        </div>
 
-function doConnect(){
-  if(client){client.end(); client=null;}
-  const h = document.getElementById('host').value.trim();
-  const p = parseInt(document.getElementById('wsport').value) || 9001;
-  
-  client = mqtt.connect(`ws://${h}:${p}`, {clientId:'pkb_'+Math.random().toString(16).slice(2,8)});
-  
-  client.on('connect', ()=>{
-    setConnected(true);
-    client.subscribe(['pokemon/config', 'pokemon/predict', 'pokemon/capture']);
-    // 임시 테스트 데이터
-    if(!config) {
-      config = {
-        mappings: [
-          {gesture:'left', pokemon:'피카츄'}, {gesture:'up', pokemon:'꼬부기'},
-          {gesture:'right', pokemon:'파이리'}, {gesture:'down', pokemon:'이상해씨'},
-          {gesture:'circle', pokemon:'이브이'}
-        ],
-        hidden: '산지니'
-      };
-      renderDex();
-    }
-  });
-  
-  client.on('close', ()=>setConnected(false));
-  client.on('error', e=>console.error(e));
-  client.on('message', (topic,msg)=>{
-    const str = msg.toString(); let d; try{d=JSON.parse(str);}catch(e){return;}
-    if(topic === 'pokemon/config'){ config=d; renderDex(); }
-    else if(topic === 'pokemon/predict'){ if(webState!=='catching') renderPredict(d); }
-    else if(topic === 'pokemon/capture'){
-      playCaptureAnim(d.pokemon, d.hidden);
-      if(d.pokemon){ caught.add(d.pokemon); saveCaught(); renderDex(); }
-    }
-  });
-}
+        <!-- Trainer Platform (Bottom-Left) -->
+        <div class="platform platform-trainer"></div>
 
-loadCaught();
-window.addEventListener('load', ()=>doConnect());
-</script>
+        <!-- Player / Trainer Zone (with Held Shaking Pokeball) -->
+        <div class="trainer-zone">
+          <div class="trainer-sprite-box">
+            <svg class="trainer-sprite" id="trainerSprite" viewBox="0 0 16 16" shape-rendering="crispEdges">
+              <rect x="6" y="2" width="5" height="1" fill="#e53935"/>
+              <rect x="5" y="3" width="7" height="2" fill="#e53935"/>
+              <rect x="5" y="5" width="7" height="1" fill="#ffffff"/>
+              <rect x="5" y="6" width="7" height="1" fill="#212121"/>
+              <rect x="6" y="7" width="5" height="1" fill="#212121"/>
+              <rect x="7" y="8" width="3" height="1" fill="#ffccbc"/>
+              <rect x="6" y="9" width="5" height="5" fill="#e53935"/>
+              <rect x="5" y="9" width="1" height="4" fill="#ffffff"/>
+              <rect x="11" y="9" width="1" height="4" fill="#ffffff"/>
+              <rect x="3" y="7" width="3" height="6" fill="#fbc02d"/>
+              <rect x="4" y="6" width="2" height="1" fill="#fbc02d"/>
+              <rect x="6" y="14" width="2" height="2" fill="#1e88e5"/>
+              <rect x="9" y="14" width="2" height="2" fill="#1e88e5"/>
+            </svg>
+
+            <!-- Held Pokeball that wiggles while board is shaking -->
+            <div class="held-pokeball" id="heldPokeball"></div>
+          </div>
+        </div>
+
+        <!-- Dynamic Flying Pokeball Sprite -->
+        <div class="pokeball-flying" id="pokeballFlying"></div>
+
+        <!-- White Flash Screen Overlay -->
+        <div class="capture-flash-screen" id="captureFlash"></div>
+      </section>
+
+      <!-- [우측] Pokédex Grid Panel -->
+      <aside class="pokedex-panel">
+        <div class="dex-header">
+          <span class="dex-title">📖 POKÉDEX (도감)</span>
+          <button class="btn-reset-dex" id="btnResetDex">초기화</button>
+        </div>
+        
+        <div class="pokedex-grid" id="pokedexGrid">
+          <!-- Dynamic Pokedex Cards Rendered via script.js -->
+        </div>
+      </aside>
+    </main>
+
+    <!-- [하단] Battle Message Dialog Box -->
+    <footer class="bottom-dialog-container">
+      <div class="battle-dialog-box">
+        <div class="dialog-text" id="dialogText">
+          <!-- Typewriter Animated Text Rendered via script.js -->
+        </div>
+        <div class="dialog-arrow"></div>
+      </div>
+    </footer>
+
+  </div>
+
+  <!-- MQTT Library & Main Game Engine Script -->
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <script src="script.js"></script>
 </body>
 </html>

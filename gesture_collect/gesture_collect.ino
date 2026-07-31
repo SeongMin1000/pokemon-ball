@@ -24,7 +24,7 @@
 
 #define WIFI_SSID "projectbee"
 #define WIFI_PASS "honeybear!"
-#define MDNS_NAME "xiao"
+static char mdnsName[24];
 
 #define MAX_SAMPLES 400        // 4 s @ 100 Hz headroom (400*6*4 = 9.6 KB RAM)
 
@@ -66,6 +66,7 @@ button:disabled{opacity:.5;cursor:default}
   background:#e04c4c;color:#fff;border-radius:50%;cursor:pointer;font-weight:bold;font-size:14px}
 </style></head><body>
 <h2>Pokemon 제스처 수집기</h2>
+<div id="ipaddr" style="font-size:13px;color:#888"></div>
 
 <div class="panel">
   <div class="live">
@@ -106,6 +107,7 @@ LABELS.forEach(l=>{const b=document.createElement('button');b.textContent=l;
   lb.appendChild(b);});
 
 let shots=[];   // {label, csv, rows:[[t,ax,ay,az,gx,gy,gz],...]}
+fetch('/ip').then(r=>r.text()).then(ip=>document.getElementById('ipaddr').textContent='☞ '+ip);
 
 // ---- live readout (5 Hz) ----
 setInterval(async()=>{
@@ -198,6 +200,15 @@ function zipAll(){
 
 void handleRoot() { server.send_P(200, "text/html", PAGE); }
 
+void handleIP() {
+  String msg;
+  if (WiFi.getMode() == WIFI_AP)
+    msg = "http://" + WiFi.softAPIP().toString();
+  else
+    msg = "http://" + WiFi.localIP().toString() + "  (" + String(mdnsName) + ".local)";
+  server.send(200, "text/plain", msg);
+}
+
 void handleLive() {
   imu::Vector<3> a = bno.getVector(Adafruit_BNO055::VECTOR_ACCELEROMETER);
   imu::Vector<3> g = bno.getVector(Adafruit_BNO055::VECTOR_GYROSCOPE);
@@ -261,6 +272,9 @@ void setup() {
   bno.setExtCrystalUse(true);
   Serial.println("[BNO] OK");
 
+  uint8_t mac[6]; WiFi.macAddress(mac);
+  snprintf(mdnsName, sizeof(mdnsName), "xiao-%02X%02X", mac[4], mac[5]);
+
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
@@ -268,16 +282,19 @@ void setup() {
   while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) delay(200);
   if (WiFi.status() == WL_CONNECTED) {
     Serial.print("STA connected. Open http://");
-    Serial.println(WiFi.localIP());
-    if (MDNS.begin(MDNS_NAME)) Serial.println("mDNS: http://" MDNS_NAME ".local");
+    Serial.print(WiFi.localIP());
+    Serial.printf(" or http://%s.local\n", mdnsName);
+    MDNS.begin(mdnsName);
   } else {
     WiFi.mode(WIFI_AP);
-    WiFi.softAP("XIAO_GESTURE", "12345678");
-    Serial.print("Router unreachable - AP fallback. Open http://");
+    WiFi.softAP(mdnsName, "12345678");
+    Serial.print("AP mode. Connect WiFi '"); Serial.print(mdnsName);
+    Serial.print("' then open http://");
     Serial.println(WiFi.softAPIP());
   }
 
   server.on("/", handleRoot);
+  server.on("/ip", handleIP);
   server.on("/live", handleLive);
   server.on("/record", handleRecord);
   server.begin();
