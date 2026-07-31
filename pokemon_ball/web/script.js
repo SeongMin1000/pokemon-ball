@@ -4,14 +4,15 @@
  */
 
 // ==========================================================================
-// 1. DATA STRUCTURES & CONFIGURATION
+// 1. DATA STRUCTURES & CONFIGURATION (100% SYNCHRONIZED WITH CONFIG.H)
 // ==========================================================================
 const POKEMON_DATABASE = [
   { id: 25,  name: '피카츄',   nameEn: 'Pikachu',    gesture: 'LEFT',   sprite: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png', hidden: false, color: '#2196f3' },
   { id: 4,   name: '파이리',   nameEn: 'Charmander', gesture: 'RIGHT',  sprite: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/4.png',  hidden: false, color: '#ff9800' },
   { id: 7,   name: '꼬부기',   nameEn: 'Squirtle',   gesture: 'UP',     sprite: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/7.png',  hidden: false, color: '#4caf50' },
+  { id: 132, name: '메타몽',   nameEn: 'Ditto',      gesture: 'DOWN',   sprite: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/132.png', hidden: false, color: '#ab47bc' },
+  { id: 133, name: '이브이',   nameEn: 'Pokemon_E',  gesture: 'CIRCLE', sprite: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/133.png', hidden: false, color: '#e91e63' },
   { id: 1,   name: '이상해씨', nameEn: 'Bulbasaur',  gesture: 'DOWN',   sprite: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/1.png',  hidden: false, color: '#9c27b0' },
-  { id: 133, name: '이브이',   nameEn: 'Eevee',      gesture: 'CIRCLE', sprite: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/133.png', hidden: false, color: '#e91e63' },
   { id: 999, name: '산지니',   nameEn: 'Sanjini',    gesture: 'CIRCLE', sprite: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/151.png', hidden: true,  color: '#ff4081' }
 ];
 
@@ -123,11 +124,23 @@ function updatePredictions(probabilities, activeGesture) {
     typeWriterMessage('AI가 제스처를 분석 중...<br><span class="hl-gold">Touch Sensor를 눌러</span> 몬스터볼을 던지세요!');
   }
 
-  let highestGest = 'LEFT';
+  let highestGest = activeGesture ? activeGesture.toUpperCase() : 'LEFT';
   let highestProb = -1;
 
   Object.keys(GESTURE_CONFIG).forEach(gestKey => {
-    const val = probabilities[gestKey] || 0;
+    let val = 0;
+    if (probabilities && probabilities[gestKey] !== undefined) {
+      val = probabilities[gestKey];
+    } else if (probabilities && probabilities[gestKey.toLowerCase()] !== undefined) {
+      val = probabilities[gestKey.toLowerCase()];
+    }
+
+    if (val > 0 && val <= 1) {
+      val = Math.round(val * 100);
+    } else {
+      val = Math.round(val);
+    }
+
     const fillEl = document.getElementById(`gestFill_${gestKey}`);
     const valEl = document.getElementById(`gestVal_${gestKey}`);
     const itemEl = document.getElementById(`gestItem_${gestKey}`);
@@ -138,7 +151,7 @@ function updatePredictions(probabilities, activeGesture) {
 
     if (val > highestProb) {
       highestProb = val;
-      highestGest = gestKey;
+      if (!activeGesture) highestGest = gestKey;
     }
   });
 
@@ -151,8 +164,8 @@ function updatePredictions(probabilities, activeGesture) {
   // Update top active gesture badge
   const badgeEl = document.getElementById('activeGestureBadge');
   if (badgeEl) {
-    const info = GESTURE_CONFIG[highestGest];
-    badgeEl.textContent = `${info.icon} ${highestGest} (${highestProb}%)`;
+    const info = GESTURE_CONFIG[highestGest] || { icon: '✨', color: '#ff9800' };
+    badgeEl.textContent = `${info.icon || ''} ${highestGest} (${highestProb > 0 ? highestProb : 0}%)`;
     badgeEl.style.borderColor = info.color;
   }
 }
@@ -252,16 +265,27 @@ function triggerCaptureSequence(targetPokemonName, gestureName, isHidden = false
   heldPokeball.classList.remove('shaking-ball');
   heldPokeball.style.opacity = '0';
 
-  // Determine target pokemon
-  let targetPkmn = POKEMON_DATABASE.find(p => p.name === targetPokemonName || p.nameEn === targetPokemonName);
+  // Strict & Flexible Pokemon matching against config.h POKEMON_TABLE
+  const searchName = (targetPokemonName || '').toLowerCase();
+  const searchGest = (gestureName || '').toLowerCase();
+
+  let targetPkmn = POKEMON_DATABASE.find(p => 
+    (searchName && (p.nameEn.toLowerCase() === searchName || p.name.toLowerCase() === searchName)) ||
+    (searchGest && p.gesture.toLowerCase() === searchGest)
+  );
+
   if (!targetPkmn) {
     targetPkmn = currentEnemyPokemon || POKEMON_DATABASE[0];
   }
   currentEnemyPokemon = targetPkmn;
 
-  const trainerSprite = document.getElementById('trainerSprite');
+  // Immediately update Enemy Silhouette & Actual image to match exact captured Pokemon!
   const silhouetteImg = document.getElementById('enemySilhouetteImg');
   const actualImg = document.getElementById('enemyActualImg');
+  silhouetteImg.src = targetPkmn.sprite;
+  actualImg.src = targetPkmn.sprite;
+
+  const trainerSprite = document.getElementById('trainerSprite');
   const flyingBall = document.getElementById('pokeballFlying');
   const flashScreen = document.getElementById('captureFlash');
 
@@ -272,7 +296,7 @@ function triggerCaptureSequence(targetPokemonName, gestureName, isHidden = false
   trainerSprite.classList.add('throw-pose');
   setTimeout(() => trainerSprite.classList.remove('throw-pose'), 400);
 
-  // Position dynamic ball trajectory starting directly from trainer's hand to pokemon center
+  // Position dynamic ball trajectory
   const heldRect = heldPokeball.getBoundingClientRect();
   const enemyRect = silhouetteImg.getBoundingClientRect();
   const stageRect = document.getElementById('battleArenaView').getBoundingClientRect();
@@ -385,7 +409,8 @@ function toggleMqttConnection(auto = false) {
     mqttClient.on('connect', () => {
       console.log('MQTT Connected successfully!');
       setMqttStatus(true);
-      mqttClient.subscribe(['pokemon/predict', 'pokemon/capture', 'pokemon/config']);
+      // Subscribe to all pokemon topics and wildcard topics
+      mqttClient.subscribe(['#', 'pokemon/#', 'pokemon/predict', 'pokemon/capture', 'pokemon/config', 'pokemon/gesture']);
     });
 
     mqttClient.on('message', (topic, payload) => {
@@ -428,9 +453,32 @@ function setMqttStatus(isConnected) {
 }
 
 function handleMqttData(topic, data) {
-  if (topic === 'pokemon/predict' || data.type === 'prediction') {
-    updatePredictions(data.probabilities || {}, data.gesture);
-  } else if (topic === 'pokemon/capture' || data.type === 'capture') {
-    triggerCaptureSequence(data.pokemon, data.gesture, data.hidden);
+  console.log('[MQTT Received]', topic, data);
+
+  // Config Topic
+  if (topic.includes('config') || data.mappings) {
+    if (data.mappings && Array.isArray(data.mappings)) {
+      data.mappings.forEach(m => {
+        const found = POKEMON_DATABASE.find(p => p.gesture.toLowerCase() === m.gesture.toLowerCase());
+        if (found) {
+          found.nameEn = m.pokemon;
+        }
+      });
+    }
+    return;
+  }
+
+  // Predict Topic or predict payload
+  if (topic.includes('predict') || data.type === 'predict' || data.type === 'prediction') {
+    const probs = data.probabilities || data.scores || {};
+    const gest = data.topGesture || data.gesture || data.top_gesture || '';
+    updatePredictions(probs, gest);
+  } 
+  // Capture Topic or capture payload
+  else if (topic.includes('capture') || data.type === 'capture') {
+    const pkmnName = data.pokemon || data.pokemonName || '';
+    const gest = data.gesture || data.topGesture || '';
+    const isHidden = Boolean(data.hidden);
+    triggerCaptureSequence(pkmnName, gest, isHidden);
   }
 }

@@ -63,13 +63,13 @@
 // ========================================================================
 // WiFi  (STA mode — AP mode is intentionally NOT used)
 // ========================================================================
-#define WIFI_SSID   "projectbee"
-#define WIFI_PASS   "honeybear!"
+#define WIFI_SSID   "seongmin"
+#define WIFI_PASS   "35793579"
 
 // ========================================================================
 // MQTT
 // ========================================================================
-#define MQTT_HOST   "192.168.0.30"
+#define MQTT_HOST   "10.61.58.194"
 #define MQTT_PORT   1883
 #define MQTT_CLIENT_ID "pokemon_ball"
 
